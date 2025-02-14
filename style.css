@@ -1,0 +1,108 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 40px;
+    background-color: #f9f9f9;
+}
+
+/* Table styles */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    margin-bottom: 30px;
+}
+
+th, td {
+    border: 1px solid black;
+    padding: 12px;
+    text-align: left;
+    min-height: 50px;
+}
+
+/* Remove borders for specific cells */
+th:first-child, th:nth-child(2) {
+    border: none;
+    background-color: transparent;
+}
+
+/* Center the "Historical Examples" header */
+th:nth-child(2) {
+    text-align: center;
+}
+
+/* Style for the subtitle row */
+.subtitle {
+    text-align: center;
+    border: none;
+    background-color: transparent;
+    padding-bottom: 4px;
+}
+
+/* Keep first row headers transparent */
+thead tr:first-child th {
+    background-color: transparent;
+    border: none;
+}
+
+/* Style second row headers */
+thead tr:nth-child(2) th {
+    background-color: #ddd;
+}
+
+/* Keep first two cells in second row transparent */
+thead tr:nth-child(2) th:nth-child(-n+2) {
+    background-color: transparent;
+}
+
+/* Style first two columns */
+tbody td:first-child {
+    background-color: #ddd;
+}
+
+/* Style second column cells in tbody */
+tbody td:nth-child(2) {
+    background-color: #ddd;
+}
+
+.category {
+    font-weight: bold;
+    text-align: center;
+}
+
+.highlight {
+    text-align: center;
+    font-weight: bold;
+    background: #f4f4f4;
+    vertical-align: top;
+    padding-top: 4px;
+}
+
+/* Hexagon container */
+#hexagon-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(20px, 1fr));
+    gap: 10px;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.hexagon {
+    width: 20px;
+    height: 20px;
+    cursor: grab;
+    position: absolute;
+    z-index: 100;
+}
+
+/* Make sure SVG hexagons are draggable */
+.hexagon svg {
+    pointer-events: none;
+}
+
+/* Make second column narrower */
+table th:nth-child(2),
+table td:nth-child(2) {
+    width: 150px;
+    max-width: 150px;
+}
