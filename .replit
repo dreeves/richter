@@ -1,13 +1,7 @@
+run = "echo \"Replit should automatically serve index.html, no command needed.\""
+
+[deployment]
+run = ["sh", "-c", "echo \"Replit should automatically serve index.html, no command needed.\""]
+
 [nix]
 channel = "stable-24_05"
-
-[workflows]
-runButton = "Run"
-
-[[workflows.workflow]]
-name = "Run"
-author = 612582
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python -m http.server 3000 --bind 0.0.0.0"
