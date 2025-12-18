@@ -1,7 +1,17 @@
-run = "echo \"Replit should automatically serve index.html, no command needed.\""
-
-[deployment]
-run = ["sh", "-c", "echo \"Replit should automatically serve index.html, no command needed.\""]
+run = "python3 -m http.server 8000"
+entrypoint = "index.html"
+modules = ["python-3.11"]
 
 [nix]
-channel = "stable-24_05"
+channel = "stable-22_11"
+
+[deployment]
+deploymentTarget = "static"
+publicDir = "/"
+
+[[ports]]
+localPort = 8000
+externalPort = 80
+
+[agent]
+expertMode = true
