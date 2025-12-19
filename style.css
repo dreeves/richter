@@ -175,6 +175,43 @@ th {
     background-color: #d1e7dd;
 }
 
+/* Responsive Design for Mobile */
+@media (max-width: 768px) {
+
+    /* Prevent Grid Collapse: Force min-width so table functionality (hit targets) remains intact. */
+    body {
+        min-width: 600px;
+        overflow-x: auto;
+        /* Allow horizontal scroll */
+    }
+
+    h2 {
+        font-size: 1.2em;
+        margin-top: 10px;
+    }
+
+    /* Un-anchor buttons from top-right and flow them below title */
+    #undo-container {
+        position: static;
+        text-align: center;
+        margin-bottom: 10px;
+        margin-top: 10px;
+    }
+
+    .undo-btn {
+        display: inline-block;
+        margin: 5px;
+        font-size: 13px;
+        padding: 6px 12px;
+    }
+
+    /* Ensure modal still fits */
+    .modal-content {
+        width: 90%;
+        margin: 20% auto;
+    }
+}
+
 /* Modal Styling */
 .modal {
     display: none;

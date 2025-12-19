@@ -14,6 +14,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const historyStack = [];
     let isUndoing = false;
 
+    // Helper: Normalize Pointer Events
+    // Defined early for usage
+    function getPointerPos(e) {
+        if (e.touches && e.touches.length > 0) {
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+    }
+
     // StateCache for high-perf counter updates
     let cachedRowBounds = [];
     let cachedColBounds = [];
@@ -38,13 +47,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Position Undo button in the dedicated container
     undoContainer.appendChild(undoButton);
 
-    // Helper: Normalize Pointer Events
-    function getPointerPos(e) {
-        if (e.touches && e.touches.length > 0) {
-            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        }
-        return { x: e.clientX, y: e.clientY };
-    }
+    // State for Box Selection
+    let isBoxSelecting = false;
+    let boxStartX, boxStartY;
+
+    // State for Mobile Multi-Select
+    let isMultiSelectMode = false;
 
     // Helpers for Grid Calculation
     // Pointy-topped hexes (which we seem to be changing to or using) usually pack with:
@@ -197,18 +205,47 @@ document.addEventListener('DOMContentLoaded', () => {
     // Manual initial UI update for button state
     updateSelectionUI();
 
-    // Box Selection Logic
-    let isBoxSelecting = false;
-    let boxStartX, boxStartY;
+    // Multi-Select Toggle Logic
+    const multiSelectBtn = document.getElementById('multi-select-btn');
+    if (multiSelectBtn) {
+        multiSelectBtn.addEventListener('click', () => {
+            isMultiSelectMode = !isMultiSelectMode;
+            multiSelectBtn.innerText = isMultiSelectMode ? 'Multi: ON' : 'Multi: OFF';
+            multiSelectBtn.style.background = isMultiSelectMode ? '#d1e7dd' : '#fff';
 
-    document.addEventListener('mousedown', (e) => {
-        if (e.target.closest('.hexagon')) return;
-        if (e.target === undoButton) return;
-        if (e.button !== 0) return;
+            // Should existing selection be cleared? No, maybe user wants to add to it.
+        });
+    }
+
+    // Unified Box Selection Start (Mouse & Touch)
+    function handleBoxStart(e) {
+        // Condition:
+        // Mouse: Always allowed if button 0 and not on pip/button.
+        // Touch: Only allowed if isMultiSelectMode is true.
+
+        let validStart = false;
+        if (e.type === 'mousedown') {
+            if (e.target.closest('.hexagon')) return;
+            if (e.target.closest('button')) return; // buttons
+            if (e.button !== 0) return;
+            validStart = true;
+        } else if (e.type === 'touchstart') {
+            if (e.target.closest('.hexagon')) return; // handled by pip handler?
+            // Actually if we touch background in multi-mode, we want box select.
+            if (e.target.closest('button')) return;
+            if (isMultiSelectMode) {
+                validStart = true;
+                // Prevent scroll if we are box selecting
+                if (e.cancelable) e.preventDefault();
+            }
+        }
+
+        if (!validStart) return;
 
         isBoxSelecting = true;
-        boxStartX = e.pageX;
-        boxStartY = e.pageY;
+        const pos = getPointerPos(e);
+        boxStartX = pos.x;
+        boxStartY = pos.y;
 
         selectionBox.style.left = boxStartX + 'px';
         selectionBox.style.top = boxStartY + 'px';
@@ -216,17 +253,25 @@ document.addEventListener('DOMContentLoaded', () => {
         selectionBox.style.height = '0px';
         selectionBox.style.display = 'block';
 
-        if (!e.shiftKey) {
+        if (!e.shiftKey && !isMultiSelectMode) {
             clearSelection();
         }
+        // In MultiSelectMode, we usually ADD to selection (Shift behavior).
+        // Or should we clear? User expects "Toggle" behavior usually implies adding.
+        // Let's assume MultiMode implies accumulation.
+    }
 
-        e.preventDefault();
-    });
+    document.addEventListener('mousedown', handleBoxStart);
+    document.addEventListener('touchstart', handleBoxStart, { passive: false });
 
-    document.addEventListener('mousemove', (e) => {
+    function handleBoxMove(e) {
         if (!isBoxSelecting) return;
-        const currentX = e.pageX;
-        const currentY = e.pageY;
+        if (e.type === 'touchmove') e.preventDefault(); // Stop scroll
+
+        const pos = getPointerPos(e);
+        const currentX = pos.x;
+        const currentY = pos.y;
+
         const minX = Math.min(boxStartX, currentX);
         const minY = Math.min(boxStartY, currentY);
         const width = Math.abs(currentX - boxStartX);
@@ -236,9 +281,12 @@ document.addEventListener('DOMContentLoaded', () => {
         selectionBox.style.top = minY + 'px';
         selectionBox.style.width = width + 'px';
         selectionBox.style.height = height + 'px';
-    });
+    }
 
-    document.addEventListener('mouseup', (e) => {
+    document.addEventListener('mousemove', handleBoxMove);
+    document.addEventListener('touchmove', handleBoxMove, { passive: false });
+
+    function handleBoxEnd(e) {
         if (isBoxSelecting) {
             isBoxSelecting = false;
 
@@ -269,14 +317,17 @@ document.addEventListener('DOMContentLoaded', () => {
             selectionBox.style.display = 'none';
 
             // Auto Pack on box select completion
-            if (selectedPips.size > 0) {
-                // Always save history before a potential move (packing)
-                // We check if it actually moves later? No, packSelection moves immediately.
+            if (newlySelected && selectedPips.size > 0) {
                 saveHistory();
                 packSelection();
             }
         }
-    });
+    }
+
+    document.addEventListener('mouseup', handleBoxEnd);
+    document.addEventListener('touchend', handleBoxEnd);
+
+    // Helper functions
 
     // Helper functions
     function selectPip(pip) {
@@ -315,6 +366,19 @@ document.addEventListener('DOMContentLoaded', () => {
         // Save history before interaction starts? 
         // We only want to save if we actually MOVE.
         // We'll capture start positions.
+
+        // Check Multi-Select Mode for Touch
+        if (isMultiSelectMode && e.type === 'touchstart') {
+            // Toggle selection
+            if (selectedPips.has(pip)) {
+                deselectPip(pip);
+            } else {
+                selectPip(pip);
+            }
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
 
         if (e.shiftKey) {
             if (selectedPips.has(pip)) {
