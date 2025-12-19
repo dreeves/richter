@@ -51,8 +51,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let isBoxSelecting = false;
     let boxStartX, boxStartY;
 
-    // State for Mobile Multi-Select
-    let isMultiSelectMode = false;
 
     // Helpers for Grid Calculation
     // Pointy-topped hexes (which we seem to be changing to or using) usually pack with:
@@ -205,17 +203,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Manual initial UI update for button state
     updateSelectionUI();
 
-    // Multi-Select Toggle Logic
-    const multiSelectBtn = document.getElementById('multi-select-btn');
-    if (multiSelectBtn) {
-        multiSelectBtn.addEventListener('click', () => {
-            isMultiSelectMode = !isMultiSelectMode;
-            multiSelectBtn.innerText = isMultiSelectMode ? 'Multi: ON' : 'Multi: OFF';
-            multiSelectBtn.style.background = isMultiSelectMode ? '#d1e7dd' : '#fff';
-
-            // Should existing selection be cleared? No, maybe user wants to add to it.
-        });
-    }
 
     // Unified Box Selection Start (Mouse & Touch)
     function handleBoxStart(e) {
@@ -230,14 +217,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.button !== 0) return;
             validStart = true;
         } else if (e.type === 'touchstart') {
-            if (e.target.closest('.hexagon')) return; // handled by pip handler?
-            // Actually if we touch background in multi-mode, we want box select.
+            if (e.target.closest('.hexagon')) return;
             if (e.target.closest('button')) return;
-            if (isMultiSelectMode) {
-                validStart = true;
-                // Prevent scroll if we are box selecting
-                if (e.cancelable) e.preventDefault();
-            }
+            validStart = true;
+            // Prevent scroll if we are box selecting
+            if (e.cancelable) e.preventDefault();
         }
 
         if (!validStart) return;
@@ -253,7 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectionBox.style.height = '0px';
         selectionBox.style.display = 'block';
 
-        if (!e.shiftKey && !isMultiSelectMode) {
+        if (!e.shiftKey) {
             clearSelection();
         }
         // In MultiSelectMode, we usually ADD to selection (Shift behavior).
@@ -367,18 +351,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // We only want to save if we actually MOVE.
         // We'll capture start positions.
 
-        // Check Multi-Select Mode for Touch
-        if (isMultiSelectMode && e.type === 'touchstart') {
-            // Toggle selection
-            if (selectedPips.has(pip)) {
-                deselectPip(pip);
-            } else {
-                selectPip(pip);
-            }
-            if (e.cancelable) e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
 
         if (e.shiftKey) {
             if (selectedPips.has(pip)) {
