@@ -1,19 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Technological Richter Scale and AI Risk</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <h2>The Technological Richter Scale and AI Risk</h2>
+    <div id="undo-container"></div>
     <table>
         <thead>
             <tr>
-                <th></th>
-                <th></th>
+                <th style="border: none; background: transparent;"></th>
+                <th style="border: none; background: transparent;"></th>
                 <th colspan="5" class="subtitle"><em>Net Impact of AI on Human Welfare</em></th>
+                <th style="border: none; background: transparent;"></th>
             </tr>
             <tr>
                 <th></th>
@@ -23,41 +27,94 @@
                 <th>Ambiguous</th>
                 <th>Substantially Bad</th>
                 <th>Catastrophic or Existential</th>
+                <th style="background-color: #f0f8ff;"></th> <!-- Empty header for totals column -->
             </tr>
         </thead>
         <tbody>
-            <tr>
-                <td class="category"><font size="+20">10</font><br>Epochal</td>
+            <tr class="data-row" data-row="epochal">
+                <td class="category">
+                    <font size="+20">10</font><br>Epochal
+                </td>
                 <td>Holocene (humans become dominant species)</td>
-                <td></td><td></td><td></td><td></td><td></td>
+                <td class="prob-cell" data-col="positive"></td>
+                <td class="prob-cell" data-col="good"></td>
+                <td class="prob-cell" data-col="ambiguous"></td>
+                <td class="prob-cell" data-col="bad"></td>
+                <td class="prob-cell" data-col="catastrophic"></td>
+                <td class="row-total" id="total-epochal">0%</td>
             </tr>
-            <tr>
-                <td class="category"><font size="+20">9</font><br> Millenary</td>
+            <tr class="data-row" data-row="millenary">
+                <td class="category">
+                    <font size="+20">9</font><br> Millenary
+                </td>
                 <td>Industrial Revolution; agriculture; fire; the wheel; the printing press; the atomic bomb</td>
-                <td></td><td></td><td></td><td></td><td></td>
+                <td class="prob-cell" data-col="positive"></td>
+                <td class="prob-cell" data-col="good"></td>
+                <td class="prob-cell" data-col="ambiguous"></td>
+                <td class="prob-cell" data-col="bad"></td>
+                <td class="prob-cell" data-col="catastrophic"></td>
+                <td class="row-total" id="total-millenary">0%</td>
             </tr>
-            <tr>
-                <td class="category"><font size="+20">8</font><br> Centennial</td>
+            <tr class="data-row" data-row="centennial">
+                <td class="category">
+                    <font size="+20">8</font><br> Centennial
+                </td>
                 <td>Electricity; vaccines; the internet; the automobile</td>
-                <td></td><td></td><td></td><td></td><td></td>
+                <td class="prob-cell" data-col="positive"></td>
+                <td class="prob-cell" data-col="good"></td>
+                <td class="prob-cell" data-col="ambiguous"></td>
+                <td class="prob-cell" data-col="bad"></td>
+                <td class="prob-cell" data-col="catastrophic"></td>
+                <td class="row-total" id="total-centennial">0%</td>
             </tr>
-            <tr>
-                <td class="category"><font size="+20">7</font><br> Decennial</td>
+            <tr class="data-row" data-row="decennial">
+                <td class="category">
+                    <font size="+20">7</font><br> Decennial
+                </td>
                 <td>Social media; mobile phones; air conditioning; credit cards</td>
-                <td></td><td></td><td></td><td></td><td></td>
+                <td class="prob-cell" data-col="positive"></td>
+                <td class="prob-cell" data-col="good"></td>
+                <td class="prob-cell" data-col="ambiguous"></td>
+                <td class="prob-cell" data-col="bad"></td>
+                <td class="prob-cell" data-col="catastrophic"></td>
+                <td class="row-total" id="total-decennial">0%</td>
             </tr>
-            <tr>
-                <td class="category"><font size="+20">6</font><br> Annual</td>
+            <tr class="annual-row">
+                <td class="category">
+                    <font size="+20">6</font><br>Annual
+                </td>
                 <td>VCR; microwave oven; the zipper; Post-it notes</td>
-                <td colspan="6" class="highlight">↑↑ AI has already passed this threshold ↑↑</td>
+                <!-- Spanning cell for the threshold message -->
+                <td colspan="5" class="annual-merged-cell">
+                    <div class="threshold-label">
+                        ⬆ AI has already passed this threshold ⬆
+                    </div>
+                </td>
+                <td class="row-total" id="total-annual">0%</td>
             </tr>
         </tbody>
+        <tfoot>
+            <tr id="col-totals">
+                <td colspan="2" style="border: none;"></td>
+                <td class="col-total" id="total-positive">0%</td>
+                <td class="col-total" id="total-good">0%</td>
+                <td class="col-total" id="total-ambiguous">0%</td>
+                <td class="col-total" id="total-bad">0%</td>
+                <td class="col-total" id="total-catastrophic">0%</td>
+                <td id="grand-total">0%</td>
+            </tr>
+        </tfoot>
     </table>
 
+    <div class="footer-credits">
+        Adapted from <em>On the Edge</em> by Nate Silver. Built by Daniel Reeves's robotic minions.
+    </div>
+
     <div id="hexagon-container">
-      <!-- Hexagons will be generated by JavaScript -->
+        <!-- Hexagons will be generated by JavaScript -->
     </div>
 
     <script src="app.js"></script>
 </body>
+
 </html>
