@@ -682,4 +682,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('grand-total').innerHTML = renderGrand(counts.total, selectedPips.size);
     }
+
+    // Snapshot Logic
+    const snapshotBtn = document.getElementById('snapshot-btn');
+    if (snapshotBtn) {
+        snapshotBtn.addEventListener('click', async () => {
+            snapshotBtn.disabled = true;
+            snapshotBtn.innerText = 'Capturing...';
+
+            try {
+                // Capture the grid area only.
+                // The pips are in an overlay (#hexagon-container), but capturing document.body includes them.
+                // We just need to define the crop area using the table's dimensions.
+                const table = document.querySelector('table');
+                const rect = table.getBoundingClientRect();
+
+                const canvas = await html2canvas(document.body, {
+                    backgroundColor: '#f4f4f4', // Match body bg
+                    // Crop to table area
+                    x: rect.left + window.scrollX,
+                    y: rect.top + window.scrollY,
+                    width: rect.width,
+                    height: rect.height,
+                    ignoreElements: (element) => {
+                        // Still ignore the undo container inside the body render just in case
+                        if (element.id === 'undo-container') return true;
+                        if (element.classList.contains('selection-box')) return true;
+                        return false;
+                    }
+                });
+
+                canvas.toBlob(async (blob) => {
+                    try {
+                        const item = new ClipboardItem({ 'image/png': blob });
+                        await navigator.clipboard.write([item]);
+                        snapshotBtn.innerText = 'Copied!';
+                    } catch (err) {
+                        console.error('Clipboard write failed', err);
+                        snapshotBtn.innerText = 'Error';
+                    }
+                    setTimeout(() => {
+                        snapshotBtn.innerText = 'Snapshot';
+                        snapshotBtn.disabled = false;
+                    }, 2000);
+                });
+            } catch (err) {
+                console.error('Snapshot failed', err);
+                snapshotBtn.innerText = 'Error';
+                setTimeout(() => {
+                    snapshotBtn.innerText = 'Snapshot';
+                    snapshotBtn.disabled = false;
+                }, 2000);
+            }
+        });
+    }
 });

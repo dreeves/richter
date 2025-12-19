@@ -2,15 +2,52 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8">
+    <!-- -------------------- HTML Boilerplate Instructions -------------------- -->
+    <!-- 1. Note unDRY title, description, URL, and imgURL -->
+    <!-- 2. Use realfavicongenerator.net to generate the ICONS section -->
+    <!-- 3. Replace style.css and client.js filenames as needed -->
+    <!-- 4. It's fine to throw out lines containing "$OPT" -->
+    <!-- 5. Site name displays as additional line in link preview above title -->
     <title>Technological Richter Scale and AI Risk</title>
+    <meta name="description" content="Pick your probability distribution over AI outcomes">
+    <meta property="og:description" content="Pick your probability distribution over AI outcomes">
+    <meta property="og:title" content="Technological Richter Scale and AI Risk">
+    <meta property="og:site_name" content="AI Richter Scale">
+    <meta property="og:type" content="website">
+    <link rel="canonical" href="https://richter.dreev.es">
+    <meta property="og:url" content="https://richter.dreev.es">
+    <meta property="og:image" content="https://richter.dreev.es/richter.png">
+    <meta property="og:image:alt" content="AI Richter Scale">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:creator" content="@dreev">
+    <!-- BEGIN ICONS -->
+    <!-- 
+<link rel="icon" href="favicon.ico">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+-->
+    <!-- END ICONS -->
+    <script type="application/ld+json"> {
+"@context": "https://schema.org",
+"@type": "WebSite",
+"name": "Technological Richter Scale and AI Risk",
+"alternateName": ["AI Richter Scale"],
+"url": "https://richter.dreev.es",
+"image": "https://richter.dreev.es/richter.png" }
+</script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- optional preconnect / prefetch go here, eg to load Google fonts faster -->
 </head>
 
 <body>
     <h2>The Technological Richter Scale and AI Risk</h2>
-    <div id="undo-container"></div>
+    <div id="undo-container">
+        <button id="snapshot-btn" class="undo-btn">Snapshot</button>
+    </div>
     <table>
         <thead>
             <tr>
