@@ -38,6 +38,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Position Undo button in the dedicated container
     undoContainer.appendChild(undoButton);
 
+    // Helper: Normalize Pointer Events
+    function getPointerPos(e) {
+        if (e.touches && e.touches.length > 0) {
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+    }
+
     // Helpers for Grid Calculation
     // Pointy-topped hexes (which we seem to be changing to or using) usually pack with:
     // Vertical spacing = 3/4 * Height.
@@ -176,7 +184,9 @@ document.addEventListener('DOMContentLoaded', () => {
             pip.style.left = x + 'px';
             pip.style.top = y + 'px';
 
+
             pip.addEventListener('mousedown', (e) => handlePipMouseDown(e, pip));
+            pip.addEventListener('touchstart', (e) => handlePipMouseDown(e, pip), { passive: false });
             hexagonContainer.appendChild(pip);
 
             allPips.push({ left: x, top: y, id: pip.id, el: pip });
@@ -297,7 +307,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Drag Logic
     function handlePipMouseDown(e, pip) {
-        if (e.button !== 0) return;
+        // Allow left click or touch
+        if (e.type === 'mousedown' && e.button !== 0) return;
+        if (e.type === 'touchstart') e.preventDefault(); // Stop mouse emulation
+
 
         // Save history before interaction starts? 
         // We only want to save if we actually MOVE.
@@ -331,8 +344,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function startDrag(e) {
-        const startX = e.clientX;
-        const startY = e.clientY;
+        const pos = getPointerPos(e);
+        const startX = pos.x;
+        const startY = pos.y;
 
         // Cache bounds for real-time updates
         updateGridBounds();
@@ -361,9 +375,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let hasMoved = false;
 
+
+
         function move(e) {
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
+            if (e.type === 'touchmove') e.preventDefault(); // Prevent scrolling
+            const p = getPointerPos(e);
+            const dx = p.x - startX;
+            const dy = p.y - startY;
 
             if (Math.abs(dx) > 2 || Math.abs(dy) > 2) hasMoved = true;
 
@@ -382,6 +400,8 @@ document.addEventListener('DOMContentLoaded', () => {
         function stop(e) {
             document.removeEventListener('mousemove', move);
             document.removeEventListener('mouseup', stop);
+            document.removeEventListener('touchmove', move);
+            document.removeEventListener('touchend', stop);
             document.body.style.userSelect = '';
 
             // Remove dragging class
@@ -445,6 +465,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.addEventListener('mousemove', move);
         document.addEventListener('mouseup', stop);
+        document.addEventListener('touchmove', move, { passive: false });
+        document.addEventListener('touchend', stop);
     }
 
     function packSelection() {
@@ -733,6 +755,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     snapshotBtn.innerText = 'Snapshot';
                     snapshotBtn.disabled = false;
                 }, 2000);
+            }
+        });
+    }
+
+    // Help Modal Logic
+    const helpBtn = document.getElementById('help-btn');
+    const modal = document.getElementById('help-modal');
+    const closeBtn = document.querySelector('.close-btn');
+
+    if (helpBtn && modal && closeBtn) {
+        helpBtn.addEventListener('click', () => {
+            modal.style.display = 'block';
+        });
+
+        closeBtn.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+
+        // Close on click outside
+        window.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
             }
         });
     }
