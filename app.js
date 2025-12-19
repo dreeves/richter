@@ -219,6 +219,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (e.type === 'touchstart') {
             if (e.target.closest('.hexagon')) return;
             if (e.target.closest('button')) return;
+
+            // Restrict box-drag to the grid cells only (prob-cell or annual-merged-cell)
+            // This leaves the headers and row labels available for scrolling.
+            if (!e.target.closest('.prob-cell') && !e.target.closest('.annual-merged-cell')) return;
+
             validStart = true;
             // Prevent scroll if we are box selecting
             if (e.cancelable) e.preventDefault();
