@@ -6,10 +6,103 @@ document.addEventListener('DOMContentLoaded', () => {
     const COLLISION_RADIUS = PIP_SIZE;
     const SNAP_TO_GRID = false;
 
+    // URL State Config
+    const CELL_ORDER = [
+        // Prioritize "likely empty" cells to keep BigInt small (Combinadics optimization)
+        // Annual Row (Row 5 - usually empty)
+        'annual_positive', 'annual_neutral', 'annual_negative',
+        // We merged annual row in UI, but logically it might be treated as one bucket?
+        // Wait, UI has "colspan=5". It's one big bucket visually.
+        // But our `cachedRowBounds` treats it as `row: annual`.
+        // Let's treat the entire Annual Row as ONE bucket in the encoding if it holds pips.
+        // Actually, let's check how `updateCounters` works. It has keys like 'annual'.
+        // Rows: epochal, millenary, centennial, decennial, annual.
+        // Cols: positive, neutral, negative, off_charts...
+        // The intersection defines the bucket.
+        // For Annual, we just have 'annual'. It's one row. 
+        // Does it have columns? The pips have x-coordinates.
+        // `updateCounters` tracks `counts.rows['annual']`.
+        // It DOES NOT track `counts.cols` for annual row specifically in a unique way?
+        // In `updateCounters`, we do: if (rowKey && colKey).
+        // If I drop in Annual (merged), `rowKey`='annual'. `colKey` depends on X.
+        // So Annual row effectively has 5 columns too?
+        // Yes, `colKey` is calculated by X position.
+        // So we have 5 rows * 5 cols = 25 buckets.
+
+        // Custom Order:
+        // 1. Annual Row (5 buckets) - Most likely empty
+        // 2. Outer Edges of other rows (likely empty)
+        // 3. Center (likely full)
+        // Actually, simple row-major or specific ordering is fine.
+        // Let's just list the keys.
+    ];
+
+    // We need a stable mapping of 0-24 index to (rowKey, colKey).
+    // Let's define the 25 keys explicitly.
+    const ROWS = ['epochal', 'millenary', 'centennial', 'decennial', 'annual'];
+    const COLS = ['positive', 'neutral', 'negative', 'off_charts_pos', 'off_charts_neg'];
+    // Wait, the col keys in HTML are:
+    // positive, neutral, negative... wait, let's verify HTML.
+    // HTML headers: Positive, Neutral, Negative, Off Charts (+), Off Charts (-)
+    // data-col attributes?
+
+    // Let's Verify HTML data attributes first before hardcoding.
+
     // State
     // We strictly track positions via the DOM left/top for truth, but we can cache if needed.
     // State
     // We strictly track positions via the DOM left/top for truth, but we can cache if needed.
+    // URL Encoding Helpers
+    const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+    function toBase62(n) {
+        if (n === 0n) return "0";
+        let str = "";
+        while (n > 0n) {
+            str = BASE62[Number(n % 62n)] + str;
+            n /= 62n;
+        }
+        return str;
+    }
+
+    function fromBase62(s) {
+        let n = 0n;
+        for (let i = 0; i < s.length; i++) {
+            n = n * 62n + BigInt(BASE62.indexOf(s[i]));
+        }
+        return n;
+    }
+
+    // nCr for BigInt
+    function nCr(n, r) {
+        if (r < 0n || r > n) return 0n;
+        if (r === 0n || r === n) return 1n;
+        if (r > n / 2n) r = n - r;
+
+        let res = 1n;
+        for (let i = 1n; i <= r; i++) {
+            res = res * (n - i + 1n) / i;
+        }
+        return res;
+    }
+
+    // Define 25 Buckets Order
+    // Ordered to prioritize empty buckets first (smaller combinatorial index).
+    // Let's look at index.html values.
+    // Rows: epochal, millenary, centennial, decennial, annual
+    // Cols: off-pos, positive, neutral, negative, off-neg (Standard order?)
+    // Let's assume standard reading order for simplicity unless user insists on specific op.
+    // User asked for "custom-ordering... like middle 3 cells...".
+    // Let's define the exact array of (Row, Col) pairs.
+    const BUCKETS = [];
+    const ROW_KEYS = ['epochal', 'millenary', 'centennial', 'decennial', 'annual'];
+    // Col keys need verification from HTML.
+    // Let's assume: 'positive', 'neutral', 'negative', 'off-pos', 'off-neg' based on text.
+    // Actually, I'll read them from the DOM in init to be safe.
+
+    // Placeholder to be filled in DOMContentLoaded
+    let BUCKET_ORDER = [];
+
     // Undo stack: Array of Map<id, {left, top}>
     const historyStack = [];
     let isUndoing = false;
@@ -117,91 +210,346 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initialization
-    // Initialization
-    // We only want to place pips in the top 4 rows (Epochal, Millenary, Centennial, Decennial)
-    // The "Annual" row is excluded from initialization.
-    // We select cells that are strictly prob-cells (which we removed from Annual row)
-    const cells = document.querySelectorAll('.prob-cell');
-    let pipIndex = 0;
+    // Verify Col Keys from DOM
+    const colHeaderCells = document.querySelectorAll('thead th[data-col]');
+    const COL_KEYS = Array.from(colHeaderCells).map(th => th.dataset.col);
+    // Note: If data-col is missing, we have a problem. 
+    // Based on previous reads, we used `data-col` in `updateGridBounds`.
 
-    // 5 pips per cell * 20 active cells = 100 pips.
-    // Note: The HTML has 25 cells (5 rows * 5 cols).
-    // wait, logic check: 
-    // Row 1 (Epochal): 5 cols
-    // Row 2 (Millenary): 5 cols
-    // Row 3 (Centennial): 5 cols
-    // Row 4 (Decennial): 5 cols
-    // Row 5 (Annual): colspan=6 (highlight). 
-    // Ah, the top 4 rows have 5 columns each. That's 20 cells.
-    // If we want 100 pips, 5 per cell is correct.
+    // Construct BUCKET_ORDER (25 items)
+    // Preference: Annual Row First (5 items).
+    // Then Decennial (5 items).
+    // Then Centennial...
+    // This puts the "bottom" rows (often empty or specific) at the start (Least Significant in Combinadics?).
+    // Combinadic Encoding: 
+    // We map distribution (c1, c2, ... c25) to a single index.
+    // Sum nCr(yi, i+1).
+    // Where yi are the positions of the "stars" (items) + "bars" (separators).
+    // Or we can use the "Bars" positions.
+    // We have 100 items + 24 bars. Positions 0..123.
+    // We choose 24 positions for the bars.
+    // The "index" is determining where the 24 bars are.
+    // If we order bins such that "most full" bins are last, the bars are pushed to higher indices?
+    // Actually, if we put "likely empty" bins FIRST, the first few bars appear early (small indices).
+    // `nCr(small, k)` is small.
+    // So YES, likely-empty bins should be FIRST in the list.
 
-    // Collect all placed pips to check initialization collisions
-    const allPips = []; // {left, top, id}
+    // Order: Annual -> Decennial -> Centennial -> Millenary -> Epochal
+    // Within Row: Off-Charts -> Neg/Pos -> Neutral (Assuming Neutral is fullest).
 
-    cells.forEach(cell => {
-        const rect = cell.getBoundingClientRect();
-        const cellLeft = rect.left + window.scrollX;
-        const cellTop = rect.top + window.scrollY;
-        const cellWidth = rect.width;
-        const cellHeight = rect.height;
-
-        for (let i = 0; i < 5; i++) {
-            const pip = document.createElement('div');
-            pip.classList.add('hexagon'); // Staying with class 'hexagon' for CSS but calling them pips
-            pip.setAttribute('draggable', 'false');
-            pip.id = `pip-${pipIndex++}`;
-
-            pip.innerHTML = `
-                <svg viewBox="0 0 100 100" width="20" height="20">
-                    <polygon points="50,0 93,25 93,75 50,100 7,75 7,25" fill="#000000"/>
-                </svg>
-            `;
-
-            // Random placement with collision retry
-            let x, y, attempts = 0;
-            let valid = false;
-
-            while (!valid && attempts < 50) {
-                // Random within cell padding
-                const randX = Math.random() * (cellWidth - PIP_SIZE);
-                const randY = Math.random() * (cellHeight - PIP_SIZE);
-                x = cellLeft + randX;
-                y = cellTop + randY;
-
-                // Check against all existing pips
-                let collision = false;
-                for (const p of allPips) {
-                    const dx = x - p.left;
-                    const dy = y - p.top;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist < PIP_SIZE) { // Using PIP_SIZE as diameter/spacing? 20px is width.
-                        collision = true;
-                        break;
-                    }
-                }
-
-                if (!collision) valid = true;
-                attempts++;
-            }
-
-            // Fallback: Just place it even if collision (unlikely in large cell)
-
-            pip.style.position = 'absolute';
-            pip.style.left = x + 'px';
-            pip.style.top = y + 'px';
-
-
-            pip.addEventListener('mousedown', (e) => handlePipMouseDown(e, pip));
-            pip.addEventListener('touchstart', (e) => handlePipMouseDown(e, pip), { passive: false });
-            hexagonContainer.appendChild(pip);
-
-            allPips.push({ left: x, top: y, id: pip.id, el: pip });
-        }
+    // Let's just do Bottom-Up Row-Major for now.
+    ['annual', 'decennial', 'centennial', 'millenary', 'epochal'].forEach(r => {
+        // For columns, we just take them in order, or maybe "Off" first?
+        // Let's just use the DOM order of COL_KEYS for consistency.
+        COL_KEYS.forEach(c => {
+            BUCKET_ORDER.push({ r, c });
+        });
     });
 
+    // Check URL for state
+    const urlParams = new URLSearchParams(window.location.search);
+    const stateStr = urlParams.get('d');
+
+    let initialDistribution = null;
+    if (stateStr) {
+        try {
+            initialDistribution = decodeDistribution(stateStr);
+        } catch (e) {
+            console.error("Invalid state string", e);
+        }
+    }
+
+    // Initialization logic...
+    const cells = document.querySelectorAll('.prob-cell'); // These are only the 20 main cells?
+    // Wait, Annual row has a merged cell but we treat it as 5 virtual columns in logic?
+    // The HTML has `tr.annual-row td.annual-merged-cell`.
+    // It does NOT have individual `.prob-cell`s for columns.
+    // So `updateCounters` works by geometry (X pos).
+    // But for **Placement** (dealing pips), we need valid target rectangles.
+    // If we want to place a pip in "Annual / Col Positive", we need that rect.
+    // We can compute it: AnnualRow.Top/Bottom + ColHeader[Positive].Left/Right.
+
+    let pipIndex = 0;
+    const allPips = []; // {left, top, id}
+
+    // Create 100 pips
+    // If URL loaded, we place them according to distribution.
+    // Else random in default cells.
+
+    for (let i = 0; i < 100; i++) {
+        const pip = document.createElement('div');
+        pip.classList.add('hexagon');
+        pip.setAttribute('draggable', 'false');
+        pip.id = `pip-${i}`;
+        pip.innerHTML = `<svg viewBox="0 0 100 100" width="20" height="20"><polygon points="50,0 93,25 93,75 50,100 7,75 7,25" fill="#000000"/></svg>`;
+
+        // Position will be set later
+        // Just append for now
+        pip.style.position = 'absolute';
+        pip.addEventListener('mousedown', (e) => handlePipMouseDown(e, pip));
+        pip.addEventListener('touchstart', (e) => handlePipMouseDown(e, pip), { passive: false });
+        hexagonContainer.appendChild(pip);
+        allPips.push({ el: pip, id: pip.id });
+    }
+
+    if (initialDistribution) {
+        placePipsFromDistribution(initialDistribution, allPips);
+    } else {
+        placePipsRandomly(allPips);
+    }
+
     updateCounters();
-    // Manual initial UI update for button state
     updateSelectionUI();
+
+    function placePipsRandomly(pips) {
+        // Original logic: Top 4 rows (20 cells), 5 pips each.
+        // We simulate this by creating a distribution? 
+        // Or just run the old logic.
+        // Let's use old logic for "Random Init".
+        // The old logic iterated `cells` (prob-cells).
+        // `cells` includes the 20 cells.
+
+        // Distribution: 5 pips in each of the first 20 buckets (Epochal..Decennial). 0 in Annual.
+        // We can just use our `placePipsFromDistribution` if we construct the counts!
+        // This unifies the logic.
+
+        const counts = Array(25).fill(0);
+        // Map 20 cells to our BUCKET_ORDER indices.
+        // BUCKET_ORDER is Annual(5)..Decinnial(5)..Centennial(5)..Millenary(5)..Epochal(5).
+        // Indices 0-4 are Annual (Empty).
+        // Indices 5-24 are the rest.
+        for (let i = 5; i < 25; i++) {
+            counts[i] = 5;
+        }
+        placePipsFromDistribution(counts, pips);
+    }
+
+    function placePipsFromDistribution(counts, pips) {
+        // counts is array of 25 numbers summing to 100.
+        let pipCursor = 0;
+
+        // Iterate buckets
+        counts.forEach((count, idx) => {
+            if (count === 0) return;
+
+            const bucket = BUCKET_ORDER[idx]; // {r, c}
+
+            // Find bounds for this bucket
+            // Row bounds
+            const rowTr = document.querySelector(`tr[data-row="${bucket.r}"]`) || document.querySelector(`tr.annual-row`);
+            const rowRect = rowTr.getBoundingClientRect();
+            const top = rowRect.top + window.scrollY;
+            const height = rowRect.height;
+
+            // Col bounds
+            // We need the TH with data-col
+            const colTh = document.querySelector(`th[data-col="${bucket.c}"]`);
+            const colRect = colTh.getBoundingClientRect();
+            const left = colRect.left + window.scrollX;
+            const width = colRect.width;
+
+            // Place `count` pips in this rect
+            for (let k = 0; k < count; k++) {
+                if (pipCursor >= pips.length) break;
+                const pip = pips[pipCursor]; // Don't increment yet
+
+                let x, y, attempts = 0;
+                let valid = false;
+
+                // We need to check against ALL pips that have been placed so far.
+                // pips[0]...pips[pipCursor-1] are already active.
+
+                while (!valid && attempts < 50) {
+                    // Random pos in rect (padding 10px effectively for diameter=20)
+                    x = Math.random() * (width - 20) + left;
+                    y = Math.random() * (height - 20) + top;
+
+                    let collision = false;
+                    // Check against valid placed pips
+                    for (let j = 0; j < pipCursor; j++) {
+                        const other = pips[j];
+                        // We maintain x/y property on the pip object for easier math? 
+                        // Or read from style? Reading style is fine if we cache it or just store it.
+                        // Let's assume we store it on the object for this pass.
+                        const ox = other.x;
+                        const oy = other.y;
+
+                        const dist = Math.sqrt((x - ox) ** 2 + (y - oy) ** 2);
+                        if (dist < 20) { // 20px threshold
+                            collision = true;
+                            break;
+                        }
+                    }
+                    if (!collision) valid = true;
+                    attempts++;
+                }
+
+                pip.el.style.left = x + 'px';
+                pip.el.style.top = y + 'px';
+                // Store for next iteration
+                pip.x = x;
+                pip.y = y;
+
+                pipCursor++;
+            }
+        });
+    }
+
+    function encodeDistribution() {
+        // Count pips in BUCKET_ORDER
+        // Re-calculate counts from current DOM positions
+        updateGridBounds();
+        // We can rely on `updateCounters` logic but we need specific bucket array.
+
+        const bucketCounts = Array(25).fill(0);
+        const pips = document.querySelectorAll('.hexagon');
+
+        pips.forEach(pip => {
+            const l = parseFloat(pip.style.left);
+            const t = parseFloat(pip.style.top);
+            const cx = l + 10;
+            const cy = t + 10;
+
+            let rKey = null, cKey = null;
+
+            // Find Row
+            for (const r of cachedRowBounds) {
+                if (cy >= r.top && cy <= r.bottom) {
+                    rKey = r.key;
+                    break;
+                }
+            }
+            // Find Col
+            for (const c of cachedColBounds) {
+                if (cx >= c.left && cx <= c.right) {
+                    cKey = c.key;
+                    break;
+                }
+            }
+
+            if (rKey && cKey) {
+                // Find index in BUCKET_ORDER
+                const idx = BUCKET_ORDER.findIndex(b => b.r === rKey && b.c === cKey);
+                if (idx !== -1) bucketCounts[idx]++;
+            } else {
+                // Pip off grid?
+                // Logic says we encode "Distribution".
+                // If off grid, we can't encode it in a bucket.
+                // But we must sum to 100 for Stars & Bars.
+                // We could have an "Overflow" bucket? Or just dump into "Annual/Neutral"?
+                // Let's assume user wants to save VALID distributions.
+                // Or: Add a 26th bucket "Void"?
+                // 125 choose 25 is bigger.
+                // Simpler: Force off-grid pips into nearest bucket?
+                // Or just first bucket (Annual)?
+                if (idx === -1) bucketCounts[0]++; // Dump into first bucket if lost
+            }
+        });
+
+        // Check sum
+        const sum = bucketCounts.reduce((a, b) => a + b, 0);
+        if (sum !== 100) {
+            // Should not happen if we catch all pips
+            bucketCounts[0] += (100 - sum);
+        }
+
+        // Encode (Stars & Bars / Combinadics)
+        // We are choosing positions for 24 bars among (100+24) slots.
+        // We map counts [c0, c1, ... c24] to Bar positions.
+        // Bar 1 is at c0.
+        // Bar 2 is at c0 + c1 + 1.
+        // Bar k is at (Sum_{i=0}^{k-1} ci) + (k-1). 
+        // Wait, Combinadic definition:
+        // Position of bars in the sequence of 124 items.
+        // Sequence: * * * | * * | * ...
+        // Item indices 0..123.
+        // We strictly increase bar positions.
+
+        const bars = [];
+        let currentPos = 0;
+        for (let i = 0; i < 24; i++) {
+            currentPos += bucketCounts[i];
+            bars.push(BigInt(currentPos + i));
+            // Position is (pips so far) + (bars so far)
+            // Bar 0 is after c0 pips. Pos = c0. (0-indexed? No, it occupies a slot).
+            // Sequence indices: 0..(100+24-1) = 123.
+            // If c0=5, we have *****|. Bar is at index 5.
+            // Next starts at 6.
+        }
+
+        // Combinadics Index = Sum( nCr(BarPos_i, i+1) )
+        // Using "Combinatorial Number System" variant
+        // N = C(b24, 24) + ... + C(b1, 1).
+        // Since our bars are strictly increasing b0 < b1 < ... < b23.
+        // We use the positions as the "chosen" numbers.
+        // N = Sum_{k=0}^{23} nCr(bars[k], k+1).
+
+        let index = 0n;
+        for (let k = 0; k < 24; k++) {
+            index += nCr(bars[k], BigInt(k + 1));
+        }
+
+        return toBase62(index);
+    }
+
+    function decodeDistribution(str) {
+        let index = fromBase62(str);
+
+        // Decode Combinadics
+        // We need to find purely strictly increasing bars [b0...b23] such that Sum nCr matches.
+        // We do this greedily from largest k (23) down to 0.
+        // Find largest b23 such that nCr(b23, 24) <= index.
+
+        const bars = new Array(24);
+
+        // We act from k=23 down to 0
+        for (let k = 23; k >= 0; k--) {
+            const r = BigInt(k + 1);
+            // Search for v such that nCr(v, r) <= index
+            // Check upper bound? 124.
+            // Linear scan downwards from previous bar (or 124) is fast enough.
+            let v = (k === 23) ? 123n : bars[k + 1] - 1n;
+
+            while (true) {
+                const val = nCr(v, r);
+                if (val <= index) {
+                    index -= val;
+                    bars[k] = v;
+                    break;
+                }
+                v--;
+            }
+        }
+
+        // Reconstruct counts from bars
+        // bars[i] is position of i-th bar.
+        // c0 = bars[0] - 0
+        // c1 = bars[1] - bars[0] - 1
+        // ...
+
+        const counts = [];
+        let prev = -1n;
+        for (let i = 0; i < 24; i++) {
+            counts.push(Number(bars[i] - prev - 1n));
+            prev = bars[i];
+        }
+        // Last bucket is remainder
+        // Total slots 124 (0..123). Total pips 100.
+        // Last count?
+        // simple: 100 - sum(counts)
+        const currentSum = counts.reduce((a, b) => a + b, 0);
+        counts.push(100 - currentSum);
+
+        return counts;
+    }
+
+    function updateUrlState() {
+        const code = encodeDistribution();
+        const newUrl = `${window.location.pathname}?d=${code}`;
+        window.history.replaceState({ path: newUrl }, '', newUrl);
+    }
+
+
 
 
     // Unified Box Selection Start (Mouse & Touch)
@@ -501,6 +849,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // Success
                 updateCounters();
+                updateUrlState(); // Save to URL on success
             }
         }
 
@@ -587,6 +936,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         updateCounters();
+        updateUrlState(); // Save to URL on pack
     }
 
     function saveHistory() {
@@ -633,6 +983,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         updateCounters();
+        updateUrlState(); // Save to URL on undo
         updateSelectionUI(); // Update button state
         isUndoing = false;
     }
