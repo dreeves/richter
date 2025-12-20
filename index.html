@@ -2,26 +2,26 @@
 <html lang="en">
 
 <head>
-    <meta charset="utf-8">
-    <!-- -------------------- HTML Boilerplate Instructions -------------------- -->
-    <!-- 1. Note unDRY title, description, URL, and imgURL -->
-    <!-- 2. Site name displays as additional line in link preview above title -->
-    <title>Technological Richter Scale and AI Risk</title>
-    <meta name="description" content="Pick your probability distribution over AI outcomes">
-    <meta property="og:description" content="Pick your probability distribution over AI outcomes">
-    <meta property="og:title" content="Technological Richter Scale and AI Risk">
-    <meta property="og:site_name" content="AI Richter Scale">
-    <meta property="og:type" content="website">
-    <link rel="canonical" href="https://richter.dreev.es">
-    <meta property="og:url" content="https://richter.dreev.es">
-    <meta property="og:image" content="https://richter.dreev.es/richter.png">
-    <meta property="og:image:alt" content="AI Richter Scale">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:creator" content="@dreev">
-    <!-- BEGIN ICONS -->
-    <link rel="icon" href="favicon.png" type="image/png">
-    <!-- END ICONS -->
-    <script type="application/ld+json"> {
+  <meta charset="utf-8">
+  <!-- -------------------- HTML Boilerplate Instructions -------------------- -->
+  <!-- 1. Note unDRY title, description, URL, and imgURL -->
+  <!-- 2. Site name displays as additional line in link preview above title -->
+  <title>Technological Richter Scale and AI Risk</title>
+  <meta name="description" content="Pick your probability distribution over AI outcomes">
+  <meta property="og:description" content="Pick your probability distribution over AI outcomes">
+  <meta property="og:title" content="Technological Richter Scale and AI Risk">
+  <meta property="og:site_name" content="AI Richter Scale">
+  <meta property="og:type" content="website">
+  <link rel="canonical" href="https://richter.dreev.es">
+  <meta property="og:url" content="https://richter.dreev.es">
+  <meta property="og:image" content="https://richter.dreev.es/richter.png">
+  <meta property="og:image:alt" content="AI Richter Scale">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:creator" content="@dreev">
+  <!-- BEGIN ICONS -->
+  <link rel="icon" href="favicon.png" type="image/png">
+  <!-- END ICONS -->
+  <script type="application/ld+json"> {
 "@context": "https://schema.org",
 "@type": "WebSite",
 "name": "Technological Richter Scale and AI Risk",
@@ -29,137 +29,140 @@
 "url": "https://richter.dreev.es",
 "image": "https://richter.dreev.es/richter.png" }
 </script>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="style.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <!-- optional preconnect / prefetch go here, eg to load Google fonts faster -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- optional preconnect / prefetch go here, eg to load Google fonts faster -->
 </head>
 
 <body>
-    <h2>The Technological Richter Scale and AI Risk</h2>
-    <div id="undo-container">
-        <button id="snapshot-btn" class="undo-btn">Snapshot</button>
-        <button id="help-btn" class="undo-btn">Help</button>
-    </div>
-    <table>
-        <thead>
-            <tr>
-                <th style="border: none; background: transparent;"></th>
-                <th style="border: none; background: transparent;"></th>
-                <th colspan="5" class="subtitle"><em>Net Impact of AI on Human Welfare</em></th>
-                <th style="border: none; background: transparent;"></th>
-            </tr>
-            <tr>
-                <th></th>
-                <th>Historical Examples</th>
-                <th data-col="positive">Extraordinarily Positive</th>
-                <th data-col="good">Substantially Good</th>
-                <th data-col="ambiguous">Ambiguous</th>
-                <th data-col="bad">Substantially Bad</th>
-                <th data-col="catastrophic">Catastrophic or Existential</th>
-                <th style="background-color: #f0f8ff;"></th> <!-- Empty header for totals column -->
-            </tr>
-        </thead>
-        <tbody>
-            <tr class="data-row" data-row="epochal">
-                <td class="category">
-                    <font size="+20">10</font><br>Epochal
-                </td>
-                <td>Holocene (humans become dominant species)</td>
-                <td class="prob-cell" data-col="positive"></td>
-                <td class="prob-cell" data-col="good"></td>
-                <td class="prob-cell" data-col="ambiguous"></td>
-                <td class="prob-cell" data-col="bad"></td>
-                <td class="prob-cell" data-col="catastrophic"></td>
-                <td class="row-total" id="total-epochal">0%</td>
-            </tr>
-            <tr class="data-row" data-row="millenary">
-                <td class="category">
-                    <font size="+20">9</font><br> Millenary
-                </td>
-                <td>Industrial Revolution; agriculture; fire; the wheel; the printing press; the atomic bomb</td>
-                <td class="prob-cell" data-col="positive"></td>
-                <td class="prob-cell" data-col="good"></td>
-                <td class="prob-cell" data-col="ambiguous"></td>
-                <td class="prob-cell" data-col="bad"></td>
-                <td class="prob-cell" data-col="catastrophic"></td>
-                <td class="row-total" id="total-millenary">0%</td>
-            </tr>
-            <tr class="data-row" data-row="centennial">
-                <td class="category">
-                    <font size="+20">8</font><br> Centennial
-                </td>
-                <td>Electricity; vaccines; the internet; the automobile</td>
-                <td class="prob-cell" data-col="positive"></td>
-                <td class="prob-cell" data-col="good"></td>
-                <td class="prob-cell" data-col="ambiguous"></td>
-                <td class="prob-cell" data-col="bad"></td>
-                <td class="prob-cell" data-col="catastrophic"></td>
-                <td class="row-total" id="total-centennial">0%</td>
-            </tr>
-            <tr class="data-row" data-row="decennial">
-                <td class="category">
-                    <font size="+20">7</font><br> Decennial
-                </td>
-                <td>Social media; mobile phones; air conditioning; credit cards</td>
-                <td class="prob-cell" data-col="positive"></td>
-                <td class="prob-cell" data-col="good"></td>
-                <td class="prob-cell" data-col="ambiguous"></td>
-                <td class="prob-cell" data-col="bad"></td>
-                <td class="prob-cell" data-col="catastrophic"></td>
-                <td class="row-total" id="total-decennial">0%</td>
-            </tr>
-            <tr class="annual-row">
-                <td class="category">
-                    <font size="+20">6</font><br>Annual
-                </td>
-                <td>VCR; microwave oven; the zipper; Post-it notes</td>
-                <!-- Spanning cell for the threshold message -->
-                <td colspan="5" class="annual-merged-cell">
-                    <div class="threshold-label">
-                        ⬆ AI has already passed this threshold ⬆
-                    </div>
-                </td>
-                <td class="row-total" id="total-annual">0%</td>
-            </tr>
-        </tbody>
-        <tfoot>
-            <tr id="col-totals">
-                <td colspan="2" style="border: none;"></td>
-                <td class="col-total" id="total-positive">0%</td>
-                <td class="col-total" id="total-good">0%</td>
-                <td class="col-total" id="total-ambiguous">0%</td>
-                <td class="col-total" id="total-bad">0%</td>
-                <td class="col-total" id="total-catastrophic">0%</td>
-                <td id="grand-total">0%</td>
-            </tr>
-        </tfoot>
-    </table>
+  <h2>The Technological Richter Scale and AI Risk</h2>
+  <div id="undo-container">
+    <button id="snapshot-btn" class="undo-btn">Snapshot</button>
+    <button id="help-btn" class="undo-btn">Help</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="border: none; background: transparent;"></th>
+        <th style="border: none; background: transparent;"></th>
+        <th colspan="5" class="subtitle"><em>Net Impact of AI on Human Welfare</em></th>
+        <th style="border: none; background: transparent;"></th>
+      </tr>
+      <tr>
+        <th></th>
+        <th>Historical Examples</th>
+        <th data-col="positive">Extraordinarily Positive</th>
+        <th data-col="good">Substantially Good</th>
+        <th data-col="ambiguous">Ambiguous</th>
+        <th data-col="bad">Substantially Bad</th>
+        <th data-col="catastrophic">Catastrophic or Existential</th>
+        <th style="background-color: #f0f8ff;"></th> <!-- Empty header for totals column -->
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="data-row" data-row="epochal">
+        <td class="category">
+          <font size="+20">10</font><br>Epochal
+        </td>
+        <td>Holocene (humans become dominant species)</td>
+        <td class="prob-cell" data-col="positive"></td>
+        <td class="prob-cell" data-col="good"></td>
+        <td class="prob-cell" data-col="ambiguous"></td>
+        <td class="prob-cell" data-col="bad"></td>
+        <td class="prob-cell" data-col="catastrophic"></td>
+        <td class="row-total" id="total-epochal">0%</td>
+      </tr>
+      <tr class="data-row" data-row="millenary">
+        <td class="category">
+          <font size="+20">9</font><br> Millenary
+        </td>
+        <td>Industrial Revolution; agriculture; fire; the wheel; the printing press; the atomic bomb</td>
+        <td class="prob-cell" data-col="positive"></td>
+        <td class="prob-cell" data-col="good"></td>
+        <td class="prob-cell" data-col="ambiguous"></td>
+        <td class="prob-cell" data-col="bad"></td>
+        <td class="prob-cell" data-col="catastrophic"></td>
+        <td class="row-total" id="total-millenary">0%</td>
+      </tr>
+      <tr class="data-row" data-row="centennial">
+        <td class="category">
+          <font size="+20">8</font><br> Centennial
+        </td>
+        <td>Electricity; vaccines; the internet; the automobile</td>
+        <td class="prob-cell" data-col="positive"></td>
+        <td class="prob-cell" data-col="good"></td>
+        <td class="prob-cell" data-col="ambiguous"></td>
+        <td class="prob-cell" data-col="bad"></td>
+        <td class="prob-cell" data-col="catastrophic"></td>
+        <td class="row-total" id="total-centennial">0%</td>
+      </tr>
+      <tr class="data-row" data-row="decennial">
+        <td class="category">
+          <font size="+20">7</font><br> Decennial
+        </td>
+        <td>Social media; mobile phones; air conditioning; credit cards</td>
+        <td class="prob-cell" data-col="positive"></td>
+        <td class="prob-cell" data-col="good"></td>
+        <td class="prob-cell" data-col="ambiguous"></td>
+        <td class="prob-cell" data-col="bad"></td>
+        <td class="prob-cell" data-col="catastrophic"></td>
+        <td class="row-total" id="total-decennial">0%</td>
+      </tr>
+      <tr class="annual-row">
+        <td class="category">
+          <font size="+20">6</font><br>Annual
+        </td>
+        <td>VCR; microwave oven; the zipper; Post-it notes</td>
+        <!-- Spanning cell for the threshold message -->
+        <td colspan="5" class="annual-merged-cell">
+          <div class="threshold-label">
+            ⬆ AI has already passed this threshold ⬆
+          </div>
+        </td>
+        <td class="row-total" id="total-annual">0%</td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr id="col-totals">
+        <td colspan="2" style="border: none;"></td>
+        <td class="col-total" id="total-positive">0%</td>
+        <td class="col-total" id="total-good">0%</td>
+        <td class="col-total" id="total-ambiguous">0%</td>
+        <td class="col-total" id="total-bad">0%</td>
+        <td class="col-total" id="total-catastrophic">0%</td>
+        <td id="grand-total">0%</td>
+      </tr>
+    </tfoot>
+  </table>
 
-    <div class="footer-credits">
-        Adapted from <em>On the Edge</em> by Nate Silver. Built by Daniel Reeves's robotic minions.
-    </div>
+  <div class="footer-credits">
+    Adapted from <em>On the Edge</em> by Nate Silver. Built by Daniel Reeves's robotic minions.
+  </div>
 
-    <div id="hexagon-container">
-        <!-- Hexagons will be generated by JavaScript -->
-    </div>
+  <div id="hexagon-container">
+    <!-- Hexagons will be generated by JavaScript -->
+  </div>
 
-    <!-- Help Modal -->
-    <div id="help-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-btn">&times;</span>
-            <h2>Instructions</h2>
-            <p>You have <strong>100 pips</strong>.
-                Each is <strong>1% probability</strong>.
-                Drag them to where you think AI is heading by the end of 2029.</p>
-            <p>
-                You can highlight a bunch at once by dragging a box around them.
-            </p>
-            <p>Copy the URL to share your probability distribution.</p>
-        </div>
+  <!-- Help Modal -->
+  <div id="help-modal" class="modal">
+    <div class="modal-content">
+      <span class="close-btn">&times;</span>
+      <h2>Instructions</h2>
+      <p>
+        Each pip is 1% probability and there 100 of them.
+        Drag them to where you think AI is heading.
+        By when?
+        By the time AI capabilities next plateau, whenever that may be.
+      </p>
+      <p>
+        Tip: You can highlight a bunch of pips at once by dragging a box around them.
+      </p>
+      <p>Copy the URL to share your probability distribution.</p>
     </div>
+  </div>
 
-    <script src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 
 </html>

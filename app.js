@@ -428,22 +428,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
+            let idx = -1;
+
             if (rKey && cKey) {
                 // Find index in BUCKET_ORDER
-                const idx = BUCKET_ORDER.findIndex(b => b.r === rKey && b.c === cKey);
-                if (idx !== -1) bucketCounts[idx]++;
+                idx = BUCKET_ORDER.findIndex(b => b.r === rKey && b.c === cKey);
+            }
+
+            if (idx !== -1) {
+                bucketCounts[idx]++;
             } else {
                 // Pip off grid?
                 // Logic says we encode "Distribution".
-                // If off grid, we can't encode it in a bucket.
-                // But we must sum to 100 for Stars & Bars.
-                // We could have an "Overflow" bucket? Or just dump into "Annual/Neutral"?
-                // Let's assume user wants to save VALID distributions.
-                // Or: Add a 26th bucket "Void"?
-                // 125 choose 25 is bigger.
-                // Simpler: Force off-grid pips into nearest bucket?
-                // Or just first bucket (Annual)?
-                if (idx === -1) bucketCounts[0]++; // Dump into first bucket if lost
+                // We map off-grid pips to the NEAREST bucket to preserve the 100-pip invariant.
+                // This is better than dumping them all in bucket 0.
+
+                let minDist = Infinity;
+                let bestIdx = 0;
+
+                // Find nearest bucket center
+                // We need the Rects of all 25 buckets?
+                // We can iterate BUCKET_ORDER and check cached bounds.
+                // It's a bit heavy but N=100 pips * 25 buckets = 2500 ops. Fast.
+
+                BUCKET_ORDER.forEach((b, bIdx) => {
+                    // Reconstruct rect from cachedRowBounds / cachedColBounds
+                    const r = cachedRowBounds.find(rb => rb.key === b.r);
+                    const c = cachedColBounds.find(cb => cb.key === b.c);
+
+                    if (r && c) {
+                        const centerX = (c.left + c.right) / 2;
+                        const centerY = (r.top + r.bottom) / 2;
+
+                        const dist = Math.sqrt((cx - centerX) ** 2 + (cy - centerY) ** 2);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            bestIdx = bIdx;
+                        }
+                    }
+                });
+
+                bucketCounts[bestIdx]++;
             }
         });
 
@@ -665,6 +690,70 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('mouseup', handleBoxEnd);
     document.addEventListener('touchend', handleBoxEnd);
 
+    // Helper functions for Smart Placement
+    function getOccupiedSlots(excludePipsSet = new Set()) {
+        const occupied = {};
+        const allPips = document.querySelectorAll('.hexagon');
+        allPips.forEach(p => {
+            if (!excludePipsSet.has(p)) {
+                // We map raw coordinates to grid slots to "reserve" them.
+                // Note: Pips might not be perfectly aligned, but we reserve the *nearest* slot.
+                const pos = getGridPos(parseFloat(p.style.left), parseFloat(p.style.top));
+                occupied[`${pos.row}_${pos.col}`] = true;
+            }
+        });
+        return occupied;
+    }
+
+    function findNearestFreeSlot(targetX, targetY, occupiedSlotsMap) {
+        const startGrid = getGridPos(targetX, targetY);
+
+        // If the exact slot is free, prefer exact position? 
+        // Logic: if we are resolving a collision, we likely want the NEAREST free slot.
+        // If the current position is valid (not in occupiedSlots), we technically don't need to move?
+        // But this function is usually called when we *know* there's a problem or we want to pack.
+        // Actually, for "Smart Drop", if there's no collision, we don't call this.
+        // If there IS a collision, we call this.
+
+        const queue = [{ row: startGrid.row, col: startGrid.col }];
+        const visited = new Set([`${startGrid.row}_${startGrid.col}`]);
+
+        // Spiral directions
+        const directionsEven = [
+            { dRow: -1, dCol: -1 }, { dRow: -1, dCol: 0 },
+            { dRow: 0, dCol: -1 }, { dRow: 0, dCol: 1 },
+            { dRow: 1, dCol: -1 }, { dRow: 1, dCol: 0 }
+        ];
+        const directionsOdd = [
+            { dRow: -1, dCol: 0 }, { dRow: -1, dCol: 1 },
+            { dRow: 0, dCol: -1 }, { dRow: 0, dCol: 1 },
+            { dRow: 1, dCol: 0 }, { dRow: 1, dCol: 1 }
+        ];
+
+        let qIndex = 0;
+        while (qIndex < 3000 && qIndex < queue.length) {
+            const curr = queue[qIndex++];
+            const key = `${curr.row}_${curr.col}`;
+
+            if (!occupiedSlotsMap[key]) {
+                // Found one!
+                return curr;
+            }
+
+            const dirs = (Math.abs(curr.row) % 2 === 0) ? directionsEven : directionsOdd;
+            for (let d of dirs) {
+                const nRow = curr.row + d.dRow;
+                const nCol = curr.col + d.dCol;
+                const nKey = `${nRow}_${nCol}`;
+                if (!visited.has(nKey)) {
+                    visited.add(nKey);
+                    queue.push({ row: nRow, col: nCol });
+                }
+            }
+        }
+        return startGrid; // Fallback
+    }
+
     // Helper functions
 
     // Helper functions
@@ -804,54 +893,99 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Verify collision on drop
-            // For each moved pip, check collision with unselected pips OR other selected pips?
-            // "can you keep them from overlapping?"
-
-            let collision = false;
+            // Smart Placement on Drop
             const allPips = document.querySelectorAll('.hexagon');
 
-            // Naive collision check O(N^2) effectively but N=100 is small.
-            for (let pip of selectedPips) {
-                const r1 = pip.getBoundingClientRect();
-                const cx1 = r1.left + r1.width / 2;
-                const cy1 = r1.top + r1.height / 2;
+            // 1. Build map of currently occupied slots by UNSELECTED pips
+            //    (These are static walls we must respect)
+            const occupiedSlots = getOccupiedSlots(selectedPips);
 
+            let placedCount = 0;
+
+            // 2. Iterate selected pips and resolve collisions
+            selectedPips.forEach(pip => {
+                const currentLeft = parseFloat(pip.style.left);
+                const currentTop = parseFloat(pip.style.top);
+                // Center
+                const cx = currentLeft + 10;
+                const cy = currentTop + 10;
+
+                let collision = false;
+
+                // Check collision against UNSELECTED pips
+                // (We do a simple distance check first to see if we even NEED to snap)
+                // If user dropped it in empty space, we leave it (loose placement).
+                // Unless we want to force grid snap? 
+                // "be smarter about placement... where they don't fit" implies only fixing bad ones.
+
+                // Efficiency: Check distance against all other pips?
+                // Or just check if the grid slot is taken?
+                // Visual overlap matters more than grid slot logic for the trigger.
+
+                // Let's stick to the visual collision check dist < 20.
                 for (let other of allPips) {
-                    if (pip === other) continue; // Skip self
-                    // If other is also selected, we skip? 
-                    // No, dragged group usually maintains separation, but if we dragged 
-                    // and somehow squished them (not possible with rigid drag)
-                    // The main issue is dropping ONTO existing static pips.
-                    if (selectedPips.has(other)) continue;
+                    if (pip === other) continue;
+                    if (selectedPips.has(other)) {
+                        // If checking against other SELECTED pips:
+                        // Since we move them as a group, they maintain relative spacing.
+                        // However, if we process them sequentially and one moves (snaps), 
+                        // it might collide with a subsequent one?
+                        // "occupiedSlots" will handle the sequential exclusion.
+                        // So we don't strictly need to check distance against other selected pips 
+                        // IF we trust the grid system. 
+                        // But wait, if we are in "loose mode", we haven't snapped yet.
+                        // Let's ignore other selected pips for the *trigger*, 
+                        // but strictly respect them for the *resolution* (via occupiedSlots).
+                        continue;
+                    }
 
                     const r2 = other.getBoundingClientRect();
                     const cx2 = r2.left + r2.width / 2;
                     const cy2 = r2.top + r2.height / 2;
 
-                    const dist = Math.sqrt((cx1 - cx2) ** 2 + (cy1 - cy2) ** 2);
-                    if (dist < 20) { // 20px threshold
+                    const dist = Math.sqrt((cx - cx2) ** 2 + (cy - cy2) ** 2);
+                    if (dist < 20) {
                         collision = true;
                         break;
                     }
                 }
-                if (collision) break;
-            }
 
-            if (collision) {
-                // Revert
-                selectedPips.forEach(pip => {
-                    const init = initialPositions.get(pip);
-                    pip.style.left = init.left + 'px';
-                    pip.style.top = init.top + 'px';
-                });
-                // Pop the history we just saved, because no change occurred?
-                historyStack.pop();
-            } else {
-                // Success
-                updateCounters();
-                updateUrlState(); // Save to URL on success
-            }
+                // If visual collision detected, OR if the grid slot itself is logically occupied 
+                // (which handles the case where we land "perfectly" on top of someone but didn't scan them yet? No, collision handles that).
+
+                // ALSO: Check collision against previously processed selected pips from this batch?
+                // If I drop 2 pips, and Pip A snaps to Slot X. Pip B was hovering over Slot X.
+                // Pip B needs to know Slot X is taken.
+                // `occupiedSlots` is our source of truth.
+
+                // If NO visual collision with static items, we might still overlap with *newly placed* items?
+                // Let's check `occupiedSlots` for the current position's grid slot too.
+                const myGrid = getGridPos(currentLeft, currentTop);
+                if (occupiedSlots[`${myGrid.row}_${myGrid.col}`]) {
+                    collision = true; // Grid conflict
+                }
+
+                if (collision) {
+                    // RESOLVE CONFLICT
+                    // Find nearest free slot
+                    const target = findNearestFreeSlot(currentLeft, currentTop, occupiedSlots);
+                    const pos = getScreenPos(target.row, target.col);
+
+                    pip.style.left = pos.x + 'px';
+                    pip.style.top = pos.y + 'px';
+
+                    // Mark this slot as taken for the next pip in loop
+                    occupiedSlots[`${target.row}_${target.col}`] = true;
+                } else {
+                    // No collision. Leave it where it is.
+                    // BUT register it in occupiedSlots so others don't land on it.
+                    // We map its current loose position to the nearest grid slot for reservation purposes.
+                    occupiedSlots[`${myGrid.row}_${myGrid.col}`] = true;
+                }
+            });
+
+            updateCounters();
+            updateUrlState();
         }
 
         document.addEventListener('mousemove', move);
@@ -872,21 +1006,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const centerX = sumX / selectedPips.size;
         const centerY = sumY / selectedPips.size;
 
-        const centerGrid = getGridPos(centerX, centerY);
-
         // Map occupied slots by UNSELECTED pips
-        const occupiedGrid = {};
-        const allPips = document.querySelectorAll('.hexagon');
-        allPips.forEach(p => {
-            if (!selectedPips.has(p)) {
-                const pos = getGridPos(parseFloat(p.style.left), parseFloat(p.style.top));
-                occupiedGrid[`${pos.row}_${pos.col}`] = true;
-            }
-        });
+        const occupiedGrid = getOccupiedSlots(selectedPips);
 
-        // Spiral search for target slots
-        // Use row/col consistently
+        // Find slots
         const targetSlots = [];
+
+        // We'll simulate finding N slots by running the search N times? 
+        // Or one search that gathers N slots?
+        // `findNearestFreeSlot` returns ONE.
+        // But we want a cluster around the centroid.
+        // It's efficient to just run a single BFS/Spiral that yields N slots.
+
+        // Let's reimplement a "Find K Nearest Slots" here, or just loop `findNearestFreeSlot`?
+        // If we loop `findNearestFreeSlot`, we must update `occupiedGrid` each time.
+        // The centroid stays roughly the same (or we start search from same center).
+
+        const centerGrid = getGridPos(centerX, centerY);
+        const searchStart = { x: centerX, y: centerY }; // Reuse logic if possible?
+
+        // Actually, the previous spiral implementation was efficient for finding K slots.
+        // Let's stick to the Spiral logic here but using the new `occupiedGrid` init.
+
         const queue = [{ row: centerGrid.row, col: centerGrid.col }];
         const visited = new Set([`${centerGrid.row}_${centerGrid.col}`]);
 
@@ -902,7 +1043,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ];
 
         let qIndex = 0;
-        // Increase limit to ensure we find slots even in dense areas
         while (targetSlots.length < selectedPips.size && qIndex < 3000) {
             if (qIndex >= queue.length) break;
             const curr = queue[qIndex++];
