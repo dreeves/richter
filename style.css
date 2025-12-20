@@ -181,9 +181,9 @@ th {
 /* Responsive Design for Mobile */
 @media (max-width: 768px) {
 
-    /* Prevent Grid Collapse: Force min-width so table functionality (hit targets) remains intact. */
+    /* Prevent Grid Collapse: Force min-width so text doesn't overlap. */
     body {
-        min-width: 600px;
+        min-width: 800px;
         overflow-x: auto;
         /* Allow horizontal scroll */
     }
@@ -191,6 +191,15 @@ th {
     h2 {
         font-size: 1.2em;
         margin-top: 10px;
+    }
+
+    /* Shrink text slightly and ensure wrapping */
+    th,
+    td {
+        font-size: 0.85em;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        /* Modern standard */
     }
 
     /* Un-anchor buttons from top-right and flow them below title */
