@@ -359,7 +359,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // We need to check against ALL pips that have been placed so far.
                 // pips[0]...pips[pipCursor-1] are already active.
 
-                while (!valid && attempts < 50) {
+                while (!valid && attempts < 500) {
                     // Random pos in rect (padding 10px effectively for diameter=20)
                     x = Math.random() * (width - 20) + left;
                     y = Math.random() * (height - 20) + top;
@@ -368,9 +368,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Check against valid placed pips
                     for (let j = 0; j < pipCursor; j++) {
                         const other = pips[j];
-                        // We maintain x/y property on the pip object for easier math? 
-                        // Or read from style? Reading style is fine if we cache it or just store it.
-                        // Let's assume we store it on the object for this pass.
                         const ox = other.x;
                         const oy = other.y;
 
@@ -383,6 +380,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!collision) valid = true;
                     attempts++;
                 }
+
+                // If still invalid (crowded), fallback?
+                // We just accept the last tried position (overlap).
+                // Or maybe spiral? For now, 500 attempts is robust enough for typical usage.
 
                 pip.el.style.left = x + 'px';
                 pip.el.style.top = y + 'px';
