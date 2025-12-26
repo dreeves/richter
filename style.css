@@ -268,3 +268,15 @@ th {
     text-decoration: none;
     cursor: pointer;
 }
+
+/* Version Tag */
+.version-tag {
+    position: fixed;
+    bottom: 5px;
+    right: 10px;
+    font-size: 0.7em;
+    color: #ddd;
+    pointer-events: none;
+    z-index: 500;
+    font-family: monospace;
+}
