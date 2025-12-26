@@ -1184,8 +1184,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const counts = {
             rows: {},
             cols: {},
+            cells: {}, // New: Per-cell counts
             rowsSel: {},
             colsSel: {},
+            cellsSel: {}, // New
             total: 0,
             totalSel: 0
         };
@@ -1201,7 +1203,22 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('grand-total').innerHTML = '0%';
 
         // Clear prob cells (except annual label)
+        // We need to preserve the cell-count div if we append it? 
+        // Or cleaner: Re-render the cell-count div every time.
+        // The Annual cell has "threshold-label" which is static.
+        // The Prob cells are usually empty.
+        // Let's clear TEXT inside prob cells but we might strip our new div?
+        // Actually, existing code did: `el.innerText = ''`.
+        // This WIPES everything.
+        // We will re-append the count div.
         document.querySelectorAll('.prob-cell').forEach(el => !el.classList.contains('annual-merged-cell') && (el.innerText = ''));
+
+        // Ensure Annual cell count is cleared? 
+        // We'll update it specifically or find the .cell-count inside it.
+        const annualCell = document.querySelector('.annual-merged-cell');
+        const existingAnnualCount = annualCell.querySelector('.cell-count');
+        if (existingAnnualCount) existingAnnualCount.remove();
+
 
         const allPips = document.querySelectorAll('.hexagon');
 
@@ -1232,18 +1249,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Update Metrics
-            // Must have a valid row to count? Or valid col?
-            // "Grand Total" counts everything on the board? 
-            // Or only things in valid zones?
-            // Previously `updateCellBounds` only included specific cells.
-            // If dragging outside grid, it ignored it.
-            // Let's enforce: Must be in a Row AND in a Col?
-            // Wait, Annual row has NO col cells in DOM, but it has X-coordinates that match cols.
-            // If I drop in Annual row, `rowKey` = 'annual'. `colKey` = 'positive' (if on left).
-            // So we count it!
-
-            // Only count if inside valid bounds (Row is mandatory, Col is mandatory?)
-            // If pip is in margin, we ignore?
             if (rowKey && colKey) {
                 // Update Row
                 counts.rows[rowKey] = (counts.rows[rowKey] || 0) + 1;
@@ -1252,6 +1257,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Update Col
                 counts.cols[colKey] = (counts.cols[colKey] || 0) + 1;
                 isSel && (counts.colsSel[colKey] = (counts.colsSel[colKey] || 0) + 1);
+
+                // Update Cell
+                const cellKey = `${rowKey}_${colKey}`;
+                counts.cells[cellKey] = (counts.cells[cellKey] || 0) + 1;
+                isSel && (counts.cellsSel[cellKey] = (counts.cellsSel[cellKey] || 0) + 1);
 
                 // Update Total
                 counts.total++;
@@ -1262,6 +1272,26 @@ document.addEventListener('DOMContentLoaded', () => {
         // Render helper
         const render = (val, selVal) => {
             return `${val || 0}%${(selVal > 0) ? ` <span style="color:#ff4444">(${selVal}%)</span>` : ''}`;
+        };
+
+        // Render helper for Cell Counts (Subtle)
+        const renderCell = (val, selVal) => {
+            // If 0, show nothing? Or 0%?
+            // "very subtly... show the percentage".
+            // If 0, maybe hide it to reduce clutter? Default to showing nothing if 0.
+            if (!val && !selVal) return '';
+
+            const mainNum = val || 0;
+            const selNum = selVal || 0;
+
+            // Format: "5%" or "5% (1%)"
+            // Color handled by CSS for main, span for selected.
+
+            let html = `${mainNum}%`;
+            if (selNum > 0) {
+                html += ` <span style="color:#ff4444">(${selNum}%)</span>`;
+            }
+            return html;
         };
 
         // Render helper for Grand Total (Overloaded logic)
@@ -1285,6 +1315,45 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         document.getElementById('grand-total').innerHTML = renderGrand(counts.total, selectedPips.size);
+
+        // Render per-cell counts
+        // 1. Regular cells
+        document.querySelectorAll('.prob-cell').forEach(cell => {
+            // Skip Annual Merged Cell loop here, handled manually
+            if (cell.classList.contains('annual-merged-cell')) return;
+
+            const parentRow = cell.closest('tr');
+            const rKey = parentRow ? parentRow.dataset.row : null;
+            const cKey = cell.dataset.col;
+
+            if (rKey && cKey) {
+                const key = `${rKey}_${cKey}`;
+                const val = counts.cells[key];
+                const selVal = counts.cellsSel[key];
+
+                const html = renderCell(val, selVal);
+                if (html) {
+                    const div = document.createElement('div');
+                    div.className = 'cell-count';
+                    div.innerHTML = html;
+                    cell.appendChild(div);
+                }
+            }
+        });
+
+        // 2. Annual Merged Cell
+        // It represents the entire 'annual' row.
+        const annualVal = counts.rows['annual'];
+        const annualSel = counts.rowsSel['annual'];
+        const annualHtml = renderCell(annualVal, annualSel);
+
+        if (annualHtml) {
+            const div = document.createElement('div');
+            div.className = 'cell-count';
+            div.innerHTML = annualHtml;
+            // Ensure we don't clobber the threshold-label
+            annualCell.appendChild(div);
+        }
     }
 
     // Snapshot Logic

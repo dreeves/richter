@@ -269,7 +269,28 @@ th {
     cursor: pointer;
 }
 
+/* Per-cell counts */
+.prob-cell,
+.annual-merged-cell {
+    position: relative;
+    /* Anchor for absolute positioning of counts */
+}
+
+.cell-count {
+    position: absolute;
+    bottom: 2px;
+    right: 3px;
+    /* Slightly tighter */
+    font-size: 0.65em;
+    /* Smaller */
+    color: #bbb;
+    /* Lighter/Subtler */
+    pointer-events: none;
+    font-weight: normal;
+}
+
 /* Version Tag */
+
 .version-tag {
     position: fixed;
     bottom: 5px;
