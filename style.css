@@ -71,7 +71,7 @@ th {
     margin-bottom: 20px;
     font-size: 0.85em;
     color: #777;
-    font-style: italic;
+    /* font-style: italic; */
 }
 
 /* Undo Button Style */

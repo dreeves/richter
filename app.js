@@ -579,6 +579,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Unified Box Selection Start (Mouse & Touch)
+    let initialSelection = new Set();
+    let boxSelectionFrame = null;
+
     function handleBoxStart(e) {
         // Condition:
         // Mouse: Always allowed if button 0 and not on pip/button.
@@ -619,9 +622,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!e.shiftKey) {
             clearSelection();
         }
-        // In MultiSelectMode, we usually ADD to selection (Shift behavior).
-        // Or should we clear? User expects "Toggle" behavior usually implies adding.
-        // Let's assume MultiMode implies accumulation.
+        // Snapshot initial state for "Toggle" or "Add" behavior logic?
+        // Standard "Add" behavior (Shift): Start with X. Drag box covers Y. result X U Y.
+        // Standard "New" behavior (No Shift): Start with empty. Drag box covers Y. result Y.
+        initialSelection = new Set(selectedPips);
     }
 
     document.addEventListener('mousedown', handleBoxStart);
@@ -644,6 +648,52 @@ document.addEventListener('DOMContentLoaded', () => {
         selectionBox.style.top = minY + 'px';
         selectionBox.style.width = width + 'px';
         selectionBox.style.height = height + 'px';
+
+        // Real-time selection update (Throttled)
+        if (boxSelectionFrame) return;
+        boxSelectionFrame = requestAnimationFrame(() => {
+            updateSelectionInBox(minX, minY, minX + width, minY + height);
+            boxSelectionFrame = null;
+        });
+    }
+
+    function updateSelectionInBox(boxLeft, boxTop, boxRight, boxBottom) {
+        const pips = document.querySelectorAll('.hexagon');
+
+        // We want: Result = Initial U Box
+        // So we iterate all pips. 
+        // If in Box OR in Initial -> Selected.
+        // Else -> Unselected.
+
+        let changed = false;
+
+        pips.forEach(pip => {
+            const left = parseFloat(pip.style.left);
+            const top = parseFloat(pip.style.top);
+            const cx = left + 10;
+            const cy = top + 10;
+
+            const inBox = (cx >= boxLeft && cx <= boxRight && cy >= boxTop && cy <= boxBottom);
+            const inInitial = initialSelection.has(pip);
+            const shouldBeSelected = inBox || inInitial;
+
+            const isSelected = selectedPips.has(pip);
+
+            if (shouldBeSelected && !isSelected) {
+                selectedPips.add(pip);
+                pip.classList.add('selected');
+                changed = true;
+            } else if (!shouldBeSelected && isSelected) {
+                selectedPips.delete(pip);
+                pip.classList.remove('selected');
+                changed = true;
+            }
+        });
+
+        if (changed) {
+            updateCounters();
+            updateSelectionUI();
+        }
     }
 
     document.addEventListener('mousemove', handleBoxMove);
@@ -652,35 +702,34 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleBoxEnd(e) {
         if (isBoxSelecting) {
             isBoxSelecting = false;
-
-            const rect = selectionBox.getBoundingClientRect();
-            const boxLeft = rect.left + window.scrollX;
-            const boxTop = rect.top + window.scrollY;
-            const boxRight = rect.right + window.scrollX;
-            const boxBottom = rect.bottom + window.scrollY;
-
-            const pips = document.querySelectorAll('.hexagon');
-            let newlySelected = false;
-
-            pips.forEach(pip => {
-                const left = parseFloat(pip.style.left);
-                const top = parseFloat(pip.style.top);
-                // Center approx
-                const cx = left + 10;
-                const cy = top + 10;
-
-                if (cx >= boxLeft && cx <= boxRight && cy >= boxTop && cy <= boxBottom) {
-                    if (!selectedPips.has(pip)) {
-                        selectPip(pip);
-                        newlySelected = true;
-                    }
-                }
-            });
+            if (boxSelectionFrame) cancelAnimationFrame(boxSelectionFrame);
+            boxSelectionFrame = null;
 
             selectionBox.style.display = 'none';
 
-            // Auto Pack on box select completion
-            if (newlySelected && selectedPips.size > 0) {
+            // Check if we need to auto-pack
+            // We define "newly selected" as: Selection is different/larger than initial?
+            // Actually, if we just selected something, we usually want to pack it.
+            // But if we selected nothing (clicked empty space), we cleared selection.
+
+            // Logic: if we have a non-empty selection that is partially "new" (from the box), pack it?
+            // Or just: if selection > 0 and we actually did a drag (width > 0), pack it.
+            // If user just clicked (width~0), handleBoxStart handled clear.
+            // But if they dragged a tiny box and caught nothing?
+
+            // Check if selection changed from Initial
+            let changed = false;
+            if (selectedPips.size !== initialSelection.size) changed = true;
+            else {
+                for (let p of selectedPips) {
+                    if (!initialSelection.has(p)) {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (changed && selectedPips.size > 0) {
                 saveHistory();
                 packSelection();
             }
