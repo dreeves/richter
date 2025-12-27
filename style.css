@@ -5,6 +5,8 @@ body {
     user-select: none;
     -webkit-user-select: none;
     /* Safari */
+    -webkit-touch-callout: none;
+    /* Prevent callout on long-press */
 }
 
 h2 {
@@ -196,6 +198,7 @@ th {
     h2 {
         font-size: 1.2em;
         margin-top: 10px;
+        padding-right: 0;
     }
 
     /* Shrink text slightly and ensure wrapping */
@@ -213,13 +216,19 @@ th {
         text-align: center;
         margin-bottom: 10px;
         margin-top: 10px;
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px;
     }
 
-    .undo-btn {
-        display: inline-block;
-        margin: 5px;
-        font-size: 13px;
-        padding: 6px 12px;
+    /* Larger touch targets on mobile */
+    .icon-btn {
+        font-size: 22px;
+        padding: 10px 14px;
+        margin: 0;
+        min-width: 44px;
+        min-height: 44px;
     }
 
     /* Ensure modal still fits */

@@ -601,6 +601,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (e.type === 'touchstart') {
             if (e.target.closest('.hexagon')) return;
             if (e.target.closest('button')) return;
+            if (e.target.closest('#undo-container')) return; // Don't start box on button area
             if (e.target.closest('.prob-cell') || e.target.closest('.annual-merged-cell')) {
                 validStart = true;
             } else {
