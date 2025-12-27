@@ -720,7 +720,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 preventClearSelection = true;
                 setTimeout(() => {
                     preventClearSelection = false;
-                }, 100);
+                }, 300); // Longer timeout for mobile touch events
             } else {
                 clearSelection();
             }
