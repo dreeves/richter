@@ -1502,16 +1502,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (preventClearSelection) return;
 
-        // Also clear selection if clicking outside of pip/box?
-        // Drag starts handle this. Click on background?
-        // Simple click on background should clear selection.
-        if (!isBoxSelecting && !e.target.closest('.hexagon') && !e.target.closest('button')) {
-            if (e.target !== selectionBox) {
-                // If we click the selection box, we might want to keep it?
-                // But selection box creates a layer.
-                // Usually clicking empty space clears.
-                clearSelection();
-            }
+        // Don't clear selection if clicking on the grid, buttons, or pips
+        // Only clear on truly empty space (body background)
+        if (!isBoxSelecting &&
+            !e.target.closest('.hexagon') &&
+            !e.target.closest('button') &&
+            !e.target.closest('table') &&
+            !e.target.closest('#undo-container') &&
+            e.target !== selectionBox) {
+            clearSelection();
         }
     });
 

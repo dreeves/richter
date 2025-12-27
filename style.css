@@ -194,6 +194,8 @@ th {
         min-width: 800px;
         overflow-x: auto;
         /* Allow horizontal scroll */
+        overflow-y: hidden;
+        /* Prevent vertical expansion from absolutely positioned elements */
     }
 
     h2 {
