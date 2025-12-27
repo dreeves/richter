@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Config
     const PIP_SIZE = 20; // Visual size
+    const PIP_RADIUS = PIP_SIZE / 2;
     // Using a slightly smaller effective size for collision to allow tight packing? 
     // Or strictly PIP_SIZE. Let's start with strict.
     const COLLISION_RADIUS = PIP_SIZE;
@@ -124,6 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedPips = new Set();
     const selectionBox = document.createElement('div');
     selectionBox.className = 'selection-box';
+    selectionBox.id = 'selection-box'; // Debugging aid
     document.body.appendChild(selectionBox);
 
     const hexagonContainer = document.getElementById('hexagon-container');
@@ -131,17 +133,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const undoContainer = document.getElementById('undo-container');
 
     // Add Undo Button to UI
-    const undoButton = document.createElement('button'); // Actual button
-    undoButton.className = 'undo-btn';
-    undoButton.innerText = 'Undo';
+    const undoButton = document.createElement('button');
+    undoButton.className = 'icon-btn';
+    undoButton.innerText = '↩';
+    undoButton.title = 'Undo';
     undoButton.disabled = true; // Initially disabled
     undoButton.addEventListener('click', undo);
 
     // Position Undo button in the dedicated container
     undoContainer.appendChild(undoButton);
 
+    // Action Buttons
+    const btnSquish = document.getElementById('btn-squish');
+    const btnSpread = document.getElementById('btn-spread');
+
     // State for Box Selection
     let isBoxSelecting = false;
+    let preventClearSelection = false; // Flag to stop click from clearing immediately
     let boxStartX, boxStartY;
 
 
@@ -360,9 +368,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // pips[0]...pips[pipCursor-1] are already active.
 
                 while (!valid && attempts < 500) {
-                    // Random pos in rect (padding 10px effectively for diameter=20)
-                    x = Math.random() * (width - 20) + left;
-                    y = Math.random() * (height - 20) + top;
+                    // Random pos in rect (padding PIP_RADIUS effectively for diameter=PIP_SIZE)
+                    x = Math.random() * (width - PIP_SIZE) + left;
+                    y = Math.random() * (height - PIP_SIZE) + top;
 
                     let collision = false;
                     // Check against valid placed pips
@@ -372,7 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const oy = other.y;
 
                         const dist = Math.sqrt((x - ox) ** 2 + (y - oy) ** 2);
-                        if (dist < 20) { // 20px threshold
+                        if (dist < PIP_SIZE) { // PIP_SIZE threshold
                             collision = true;
                             break;
                         }
@@ -408,8 +416,8 @@ document.addEventListener('DOMContentLoaded', () => {
         pips.forEach(pip => {
             const l = parseFloat(pip.style.left);
             const t = parseFloat(pip.style.top);
-            const cx = l + 10;
-            const cy = t + 10;
+            const cx = l + PIP_RADIUS;
+            const cy = t + PIP_RADIUS;
 
             let rKey = null, cKey = null;
 
@@ -581,32 +589,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // Unified Box Selection Start (Mouse & Touch)
     let initialSelection = new Set();
     let boxSelectionFrame = null;
+    let allPipsInitialPositions = new Map();
 
     function handleBoxStart(e) {
-        // Condition:
-        // Mouse: Always allowed if button 0 and not on pip/button.
-        // Touch: Only allowed if isMultiSelectMode is true.
-
         let validStart = false;
         if (e.type === 'mousedown') {
             if (e.target.closest('.hexagon')) return;
-            if (e.target.closest('button')) return; // buttons
+            if (e.target.closest('button')) return;
             if (e.button !== 0) return;
             validStart = true;
         } else if (e.type === 'touchstart') {
             if (e.target.closest('.hexagon')) return;
             if (e.target.closest('button')) return;
-
-            // Restrict box-drag to the grid cells only (prob-cell or annual-merged-cell)
-            // This leaves the headers and row labels available for scrolling.
-            if (!e.target.closest('.prob-cell') && !e.target.closest('.annual-merged-cell')) return;
-
-            validStart = true;
-            // Prevent scroll if we are box selecting
-            if (e.cancelable) e.preventDefault();
+            if (e.target.closest('.prob-cell') || e.target.closest('.annual-merged-cell')) {
+                validStart = true;
+            } else {
+                return;
+            }
         }
 
         if (!validStart) return;
+
+        // Clear any previous selection (and hide box)
+        clearSelection();
 
         isBoxSelecting = true;
         const pos = getPointerPos(e);
@@ -619,13 +624,16 @@ document.addEventListener('DOMContentLoaded', () => {
         selectionBox.style.height = '0px';
         selectionBox.style.display = 'block';
 
-        if (!e.shiftKey) {
-            clearSelection();
-        }
-        // Snapshot initial state for "Toggle" or "Add" behavior logic?
-        // Standard "Add" behavior (Shift): Start with X. Drag box covers Y. result X U Y.
-        // Standard "New" behavior (No Shift): Start with empty. Drag box covers Y. result Y.
-        initialSelection = new Set(selectedPips);
+        // Snapshot ALL pips for layouts and restoration
+        allPipsInitialPositions.clear();
+        document.querySelectorAll('.hexagon').forEach(pip => {
+            allPipsInitialPositions.set(pip, {
+                left: parseFloat(pip.style.left),
+                top: parseFloat(pip.style.top)
+            });
+        });
+
+        saveHistory();
     }
 
     document.addEventListener('mousedown', handleBoxStart);
@@ -649,52 +657,43 @@ document.addEventListener('DOMContentLoaded', () => {
         selectionBox.style.width = width + 'px';
         selectionBox.style.height = height + 'px';
 
-        // Real-time selection update (Throttled)
+
         if (boxSelectionFrame) return;
         boxSelectionFrame = requestAnimationFrame(() => {
-            updateSelectionInBox(minX, minY, minX + width, minY + height);
+            updateSelectionVisuals(minX, minY, minX + width, minY + height);
             boxSelectionFrame = null;
         });
     }
 
-    function updateSelectionInBox(boxLeft, boxTop, boxRight, boxBottom) {
-        const pips = document.querySelectorAll('.hexagon');
+    function updateSelectionVisuals(boxLeft, boxTop, boxRight, boxBottom) {
+        const allPips = document.querySelectorAll('.hexagon');
 
-        // We want: Result = Initial U Box
-        // So we iterate all pips. 
-        // If in Box OR in Initial -> Selected.
-        // Else -> Unselected.
+        allPips.forEach(pip => {
+            const init = allPipsInitialPositions.get(pip);
+            if (!init) return; // Should not happen
 
-        let changed = false;
+            // Check intersection against INITIAL position (since we don't move them during drag)
+            // Or current? In passive mode, they don't move, so they are the same.
+            const cx = parseFloat(pip.style.left) + PIP_RADIUS;
+            const cy = parseFloat(pip.style.top) + PIP_RADIUS;
 
-        pips.forEach(pip => {
-            const left = parseFloat(pip.style.left);
-            const top = parseFloat(pip.style.top);
-            const cx = left + 10;
-            const cy = top + 10;
-
-            const inBox = (cx >= boxLeft && cx <= boxRight && cy >= boxTop && cy <= boxBottom);
-            const inInitial = initialSelection.has(pip);
-            const shouldBeSelected = inBox || inInitial;
-
-            const isSelected = selectedPips.has(pip);
-
-            if (shouldBeSelected && !isSelected) {
-                selectedPips.add(pip);
-                pip.classList.add('selected');
-                changed = true;
-            } else if (!shouldBeSelected && isSelected) {
-                selectedPips.delete(pip);
-                pip.classList.remove('selected');
-                changed = true;
+            if (cx >= boxLeft && cx <= boxRight && cy >= boxTop && cy <= boxBottom) {
+                if (!selectedPips.has(pip)) {
+                    selectedPips.add(pip);
+                    pip.classList.add('selected');
+                }
+            } else {
+                if (selectedPips.has(pip)) {
+                    selectedPips.delete(pip);
+                    pip.classList.remove('selected');
+                }
             }
         });
 
-        if (changed) {
-            updateCounters();
-            updateSelectionUI();
-        }
+        updateCounters();
+        updateSelectionUI(); // Enable/Disable buttons based on selection
     }
+
 
     document.addEventListener('mousemove', handleBoxMove);
     document.addEventListener('touchmove', handleBoxMove, { passive: false });
@@ -705,39 +704,104 @@ document.addEventListener('DOMContentLoaded', () => {
             if (boxSelectionFrame) cancelAnimationFrame(boxSelectionFrame);
             boxSelectionFrame = null;
 
-            selectionBox.style.display = 'none';
+            // Persistent Selection State
+            if (selectedPips.size > 0) {
+                // Capture box bounds for usage in Spread
+                // selectionBox is DOM relative.
+                lastSelectionBounds = {
+                    left: parseFloat(selectionBox.style.left),
+                    top: parseFloat(selectionBox.style.top),
+                    width: parseFloat(selectionBox.style.width),
+                    height: parseFloat(selectionBox.style.height)
+                };
 
-            // Check if we need to auto-pack
-            // We define "newly selected" as: Selection is different/larger than initial?
-            // Actually, if we just selected something, we usually want to pack it.
-            // But if we selected nothing (clicked empty space), we cleared selection.
-
-            // Logic: if we have a non-empty selection that is partially "new" (from the box), pack it?
-            // Or just: if selection > 0 and we actually did a drag (width > 0), pack it.
-            // If user just clicked (width~0), handleBoxStart handled clear.
-            // But if they dragged a tiny box and caught nothing?
-
-            // Check if selection changed from Initial
-            let changed = false;
-            if (selectedPips.size !== initialSelection.size) changed = true;
-            else {
-                for (let p of selectedPips) {
-                    if (!initialSelection.has(p)) {
-                        changed = true;
-                        break;
-                    }
-                }
-            }
-
-            if (changed && selectedPips.size > 0) {
-                saveHistory();
-                packSelection();
+                // Prevent the subsequent 'click' event from clearing this selection
+                preventClearSelection = true;
+                setTimeout(() => {
+                    preventClearSelection = false;
+                }, 100);
+            } else {
+                clearSelection();
             }
         }
     }
 
+    function clearSelection() {
+        selectedPips.forEach(pip => pip.classList.remove('selected'));
+        selectedPips.clear();
+        selectionBox.style.display = 'none';
+        lastSelectionBounds = null;
+        updateCounters();
+        updateSelectionUI(); // button state
+    }
+
+    function applySquish() {
+        if (selectedPips.size === 0) return;
+        saveHistory();
+        packSelection();
+        updateUrlState();
+        // Box stays visible - user can click Squish/Spread again
+    }
+
+    function applySpread() {
+        if (selectedPips.size === 0 || !lastSelectionBounds) return;
+        saveHistory();
+
+        const pipsInBox = Array.from(selectedPips);
+        const { left, top, width, height } = lastSelectionBounds;
+        const aspect = width / height;
+
+        let cols = Math.ceil(Math.sqrt(pipsInBox.length * aspect));
+        if (cols < 1) cols = 1;
+        let rows = Math.ceil(pipsInBox.length / cols);
+        while (rows * cols < pipsInBox.length) cols++;
+
+        const cellW = width / cols;
+        const cellH = height / rows;
+
+        // Sort by CURRENT position roughly to keep stability
+        pipsInBox.sort((a, b) => {
+            const rtA = parseFloat(a.style.top);
+            const rtB = parseFloat(b.style.top);
+            if (Math.abs(rtA - rtB) > PIP_RADIUS) return rtA - rtB;
+            return parseFloat(a.style.left) - parseFloat(b.style.left);
+        });
+
+        pipsInBox.forEach((pip, i) => {
+            const r = Math.floor(i / cols);
+            const c = i % cols;
+            const x = left + c * cellW + cellW / 2 - PIP_RADIUS;
+            const y = top + r * cellH + cellH / 2 - PIP_RADIUS;
+            pip.style.left = x + 'px';
+            pip.style.top = y + 'px';
+        });
+
+        updateUrlState();
+        // Box stays visible - user can click Squish/Spread again
+    }
+
     document.addEventListener('mouseup', handleBoxEnd);
     document.addEventListener('touchend', handleBoxEnd);
+
+    function snapSelectedToGrid() {
+        const occupied = getOccupiedSlots(selectedPips);
+
+        selectedPips.forEach(pip => {
+            const currentLeft = parseFloat(pip.style.left);
+            const currentTop = parseFloat(pip.style.top);
+
+            // Simply find the nearest free slot to where the box placed it
+            const target = findNearestFreeSlot(currentLeft, currentTop, occupied);
+            const pos = getScreenPos(target.row, target.col);
+
+            pip.style.left = pos.x + 'px';
+            pip.style.top = pos.y + 'px';
+
+            occupied[`${target.row}_${target.col}`] = true;
+        });
+        updateCounters();
+    }
+
 
     // Helper functions for Smart Placement
     function getOccupiedSlots(excludePipsSet = new Set()) {
@@ -820,17 +884,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSelectionUI();
     }
 
-    function clearSelection() {
-        selectedPips.forEach(pip => pip.classList.remove('selected'));
-        selectedPips.clear();
-        updateCounters();
-        updateSelectionUI();
-    }
-
-    function updateSelectionUI() {
-        // Only handles button state now
-        undoButton.disabled = historyStack.length === 0;
-    }
 
     // Drag Logic
     function handlePipMouseDown(e, pip) {
@@ -1413,22 +1466,64 @@ document.addEventListener('DOMContentLoaded', () => {
     // Help Modal Logic
     const helpBtn = document.getElementById('help-btn');
     const modal = document.getElementById('help-modal');
-    const closeBtn = document.querySelector('.close-btn');
 
-    if (helpBtn && modal && closeBtn) {
+    if (helpBtn && modal) {
         helpBtn.addEventListener('click', () => {
             modal.style.display = 'block';
         });
+    }
 
+    // Action Button Listeners
+    if (btnSquish && btnSpread) {
+        btnSquish.addEventListener('click', (e) => {
+            e.stopPropagation();
+            applySquish();
+        });
+        btnSpread.addEventListener('click', (e) => {
+            e.stopPropagation();
+            applySpread();
+        });
+    }
+
+    // Help Modal & Close Logic
+    const closeBtn = document.querySelector('.close-btn');
+    if (closeBtn) {
         closeBtn.addEventListener('click', () => {
             modal.style.display = 'none';
         });
+    }
 
-        // Close on click outside
-        window.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
+    // Close on click outside
+    window.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+
+        if (preventClearSelection) return;
+
+        // Also clear selection if clicking outside of pip/box?
+        // Drag starts handle this. Click on background?
+        // Simple click on background should clear selection.
+        if (!isBoxSelecting && !e.target.closest('.hexagon') && !e.target.closest('button')) {
+            if (e.target !== selectionBox) {
+                // If we click the selection box, we might want to keep it?
+                // But selection box creates a layer.
+                // Usually clicking empty space clears.
+                clearSelection();
             }
-        });
+        }
+    });
+
+    // Helper to update button state
+    function updateSelectionUI() {
+        const hasSelection = selectedPips.size > 0;
+        if (btnSquish) btnSquish.disabled = !hasSelection;
+        if (btnSpread) btnSpread.disabled = !hasSelection;
+        if (undoButton) undoButton.disabled = historyStack.length === 0;
+        // Visual style for disabled? CSS specific :disabled pseudo-class works.
+        if (hasSelection) {
+            selectionBox.style.borderColor = '#007bff';
+            selectionBox.style.backgroundColor = 'rgba(0, 123, 255, 0.2)';
+        }
     }
 });
