@@ -1,0 +1,11 @@
+{
+  "name": "richter-tests",
+  "version": "1.0.0",
+  "description": "Regression tests for Richter app",
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  },
+  "scripts": {
+    "test": "playwright test"
+  }
+}

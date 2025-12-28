@@ -615,27 +615,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleBoxStart(e) {
         let validStart = false;
+        const target = e.target;
+
+        // Restriction: Only start box selection on cells where pips can live
+        const isPipCell = target.closest('.prob-cell') || target.closest('.annual-merged-cell');
+
         if (e.type === 'mousedown') {
             if (e.target.closest('.hexagon')) return;
             if (e.target.closest('button')) return;
             if (e.button !== 0) return;
-            validStart = true;
+            if (isPipCell) validStart = true;
         } else if (e.type === 'touchstart') {
             if (e.target.closest('.hexagon')) return;
             if (e.target.closest('button')) return;
             if (e.target.closest('#undo-container')) return;
-            // Allow touch drag on any part of the table
-            if (e.target.closest('table')) {
+
+            if (isPipCell) {
                 validStart = true;
-                e.preventDefault(); // Prevent scroll
-            } else {
-                return;
+                // e.preventDefault(); // Moved down to call only if starting
             }
         }
 
-        if (!validStart) return;
+        if (!validStart) {
+            // If we click outside the box and pips, and NOT on a pip cell, 
+            // we should probably NOT clear selection immediately if the user 
+            // is trying to move the box or pips.
+            // But usually clicking "dead" space clears.
+            return;
+        }
 
-        // Clear any previous selection (and hide box)
+        // If we are here, we are starting a NEW box selection.
+        e.preventDefault(); // Stop scroll/etc
         clearSelection();
 
         isBoxSelecting = true;
