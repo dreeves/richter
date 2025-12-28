@@ -129,7 +129,8 @@ th {
     /* Don't expand page - pips overflow visibly */
     pointer-events: none;
     /* Let clicks pass through to table */
-    z-index: 50;
+    z-index: 300;
+    /* Move above selection-box (150) */
     overflow: visible;
 }
 
@@ -137,7 +138,8 @@ th {
     width: 20px;
     height: 20px;
     cursor: grab;
-    z-index: 10;
+    z-index: 200;
+    /* Above selection box so pips can be dragged */
     pointer-events: auto;
     /* Re-enable clicks on hexagons */
     touch-action: none;
@@ -165,12 +167,54 @@ th {
 /* Selection Box */
 .selection-box {
     position: absolute;
-    border: 1px dashed #007bff;
-    background-color: rgba(0, 123, 255, 0.2);
-    z-index: 100;
-    pointer-events: none;
-    /* Let mouse events pass through */
+    border: 2px dashed #007bff;
+    background-color: rgba(0, 123, 255, 0.1);
+    z-index: 150;
+    /* Below pips (300) but above table/grid (0) */
+    pointer-events: auto;
+    /* Enable interaction when visible */
     display: none;
+    cursor: move;
+    box-sizing: border-box;
+}
+
+.selection-box.dragging-new {
+    pointer-events: none;
+    /* Disable during initial drag creation */
+}
+
+/* Resize handles */
+.selection-box .resize-handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #007bff;
+    border: 1px solid #fff;
+    border-radius: 2px;
+}
+
+.selection-box .resize-handle.nw {
+    top: -5px;
+    left: -5px;
+    cursor: nwse-resize;
+}
+
+.selection-box .resize-handle.ne {
+    top: -5px;
+    right: -5px;
+    cursor: nesw-resize;
+}
+
+.selection-box .resize-handle.sw {
+    bottom: -5px;
+    left: -5px;
+    cursor: nesw-resize;
+}
+
+.selection-box .resize-handle.se {
+    bottom: -5px;
+    right: -5px;
+    cursor: nwse-resize;
 }
 
 /* Counters */
@@ -225,13 +269,13 @@ th {
         gap: 8px;
     }
 
-    /* Larger touch targets on mobile */
+    /* Larger touch targets on mobile, but smaller overall */
     .icon-btn {
-        font-size: 22px;
-        padding: 10px 14px;
+        font-size: 18px;
+        padding: 8px 10px;
         margin: 0;
-        min-width: 44px;
-        min-height: 44px;
+        min-width: 40px;
+        min-height: 40px;
     }
 
     /* Ensure modal still fits */

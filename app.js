@@ -108,13 +108,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const historyStack = [];
     let isUndoing = false;
 
-    // Helper: Normalize Pointer Events
-    // Defined early for usage
+    // Helper: Normalize Pointer Events (returns page coordinates)
     function getPointerPos(e) {
         if (e.touches && e.touches.length > 0) {
-            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            return {
+                x: e.touches[0].clientX + window.scrollX,
+                y: e.touches[0].clientY + window.scrollY
+            };
         }
-        return { x: e.clientX, y: e.clientY };
+        return {
+            x: e.clientX + window.scrollX,
+            y: e.clientY + window.scrollY
+        };
     }
 
     // StateCache for high-perf counter updates
@@ -125,8 +130,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedPips = new Set();
     const selectionBox = document.createElement('div');
     selectionBox.className = 'selection-box';
-    selectionBox.id = 'selection-box'; // Debugging aid
+    selectionBox.id = 'selection-box';
+
+    // Add resize handles
+    ['nw', 'ne', 'sw', 'se'].forEach(pos => {
+        const handle = document.createElement('div');
+        handle.className = `resize-handle ${pos}`;
+        handle.dataset.handle = pos;
+        selectionBox.appendChild(handle);
+    });
+
     document.body.appendChild(selectionBox);
+
+    // Box manipulation state
+    let isMovingBox = false;
+    let isResizingBox = false;
+    let resizeHandle = null;
+    let boxMoveStartX, boxMoveStartY;
+    let boxInitialLeft, boxInitialTop, boxInitialWidth, boxInitialHeight;
 
     const hexagonContainer = document.getElementById('hexagon-container');
     // undo container
@@ -149,6 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // State for Box Selection
     let isBoxSelecting = false;
+    let justFinishedBoxSelection = false; // Prevent click from clearing after touch drag
     let preventClearSelection = false; // Flag to stop click from clearing immediately
     let boxStartX, boxStartY;
 
@@ -601,9 +623,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (e.type === 'touchstart') {
             if (e.target.closest('.hexagon')) return;
             if (e.target.closest('button')) return;
-            if (e.target.closest('#undo-container')) return; // Don't start box on button area
-            if (e.target.closest('.prob-cell') || e.target.closest('.annual-merged-cell')) {
+            if (e.target.closest('#undo-container')) return;
+            // Allow touch drag on any part of the table
+            if (e.target.closest('table')) {
                 validStart = true;
+                e.preventDefault(); // Prevent scroll
             } else {
                 return;
             }
@@ -701,6 +725,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleBoxEnd(e) {
         if (isBoxSelecting) {
+            if (e.type === 'touchend') e.preventDefault(); // Prevent synthetic click
             isBoxSelecting = false;
             if (boxSelectionFrame) cancelAnimationFrame(boxSelectionFrame);
             boxSelectionFrame = null;
@@ -718,9 +743,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Prevent the subsequent 'click' event from clearing this selection
                 preventClearSelection = true;
+                justFinishedBoxSelection = true;
                 setTimeout(() => {
                     preventClearSelection = false;
-                }, 300); // Longer timeout for mobile touch events
+                    justFinishedBoxSelection = false;
+                }, 500); // Longer timeout for mobile touch events
             } else {
                 clearSelection();
             }
@@ -783,6 +810,129 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.addEventListener('mouseup', handleBoxEnd);
     document.addEventListener('touchend', handleBoxEnd);
+
+    // --- Box Move/Resize Handlers ---
+    selectionBox.addEventListener('mousedown', handleBoxManipStart);
+    selectionBox.addEventListener('touchstart', handleBoxManipStart, { passive: false });
+
+    function handleBoxManipStart(e) {
+        if (isBoxSelecting) return; // Don't interfere with new box creation
+
+        const pos = getPointerPos(e);
+        boxMoveStartX = pos.x;
+        boxMoveStartY = pos.y;
+        boxInitialLeft = parseFloat(selectionBox.style.left);
+        boxInitialTop = parseFloat(selectionBox.style.top);
+        boxInitialWidth = parseFloat(selectionBox.style.width);
+        boxInitialHeight = parseFloat(selectionBox.style.height);
+
+        // Check if clicking a resize handle
+        const handle = e.target.closest('.resize-handle');
+        if (handle) {
+            isResizingBox = true;
+            resizeHandle = handle.dataset.handle;
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (e.target === selectionBox) {
+            // Clicking box itself = move
+            isMovingBox = true;
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        if (isMovingBox || isResizingBox) {
+            document.addEventListener('mousemove', handleBoxManipMove);
+            document.addEventListener('mouseup', handleBoxManipEnd);
+            document.addEventListener('touchmove', handleBoxManipMove, { passive: false });
+            document.addEventListener('touchend', handleBoxManipEnd);
+        }
+    }
+
+    function handleBoxManipMove(e) {
+        if (!isMovingBox && !isResizingBox) return;
+        e.preventDefault();
+
+        const pos = getPointerPos(e);
+        const dx = pos.x - boxMoveStartX;
+        const dy = pos.y - boxMoveStartY;
+
+        if (isMovingBox) {
+            selectionBox.style.left = (boxInitialLeft + dx) + 'px';
+            selectionBox.style.top = (boxInitialTop + dy) + 'px';
+        } else if (isResizingBox) {
+            let newLeft = boxInitialLeft;
+            let newTop = boxInitialTop;
+            let newWidth = boxInitialWidth;
+            let newHeight = boxInitialHeight;
+
+            if (resizeHandle.includes('e')) {
+                newWidth = Math.max(20, boxInitialWidth + dx);
+            }
+            if (resizeHandle.includes('w')) {
+                newWidth = Math.max(20, boxInitialWidth - dx);
+                newLeft = boxInitialLeft + dx;
+            }
+            if (resizeHandle.includes('s')) {
+                newHeight = Math.max(20, boxInitialHeight + dy);
+            }
+            if (resizeHandle.includes('n')) {
+                newHeight = Math.max(20, boxInitialHeight - dy);
+                newTop = boxInitialTop + dy;
+            }
+
+            selectionBox.style.left = newLeft + 'px';
+            selectionBox.style.top = newTop + 'px';
+            selectionBox.style.width = newWidth + 'px';
+            selectionBox.style.height = newHeight + 'px';
+        }
+
+        // Update lastSelectionBounds for Spread to use
+        lastSelectionBounds = {
+            left: parseFloat(selectionBox.style.left),
+            top: parseFloat(selectionBox.style.top),
+            width: parseFloat(selectionBox.style.width),
+            height: parseFloat(selectionBox.style.height)
+        };
+    }
+
+    function handleBoxManipEnd(e) {
+        if (isMovingBox || isResizingBox) {
+            // Reselect pips that are now inside the box
+            updatePipsInBox();
+            preventClearSelection = true;
+            setTimeout(() => preventClearSelection = false, 300);
+        }
+        isMovingBox = false;
+        isResizingBox = false;
+        resizeHandle = null;
+        document.removeEventListener('mousemove', handleBoxManipMove);
+        document.removeEventListener('mouseup', handleBoxManipEnd);
+        document.removeEventListener('touchmove', handleBoxManipMove);
+        document.removeEventListener('touchend', handleBoxManipEnd);
+    }
+
+    function updatePipsInBox() {
+        if (!lastSelectionBounds) return;
+        const { left, top, width, height } = lastSelectionBounds;
+        const boxRight = left + width;
+        const boxBottom = top + height;
+
+        // Clear and reselect
+        selectedPips.forEach(pip => pip.classList.remove('selected'));
+        selectedPips.clear();
+
+        document.querySelectorAll('.hexagon').forEach(pip => {
+            const cx = parseFloat(pip.style.left) + PIP_RADIUS;
+            const cy = parseFloat(pip.style.top) + PIP_RADIUS;
+            if (cx >= left && cx <= boxRight && cy >= top && cy <= boxBottom) {
+                selectedPips.add(pip);
+                pip.classList.add('selected');
+            }
+        });
+
+        updateCounters();
+        updateSelectionUI();
+    }
 
     function snapSelectedToGrid() {
         const occupied = getOccupiedSlots(selectedPips);
@@ -1100,14 +1250,21 @@ document.addEventListener('DOMContentLoaded', () => {
     function packSelection() {
         if (selectedPips.size === 0) return;
 
-        // Calculate centroid
-        let sumX = 0, sumY = 0;
-        selectedPips.forEach(pip => {
-            sumX += parseFloat(pip.style.left);
-            sumY += parseFloat(pip.style.top);
-        });
-        const centerX = sumX / selectedPips.size;
-        const centerY = sumY / selectedPips.size;
+        // Use center of selection box if available, otherwise fall back to centroid
+        let centerX, centerY;
+        if (lastSelectionBounds) {
+            centerX = lastSelectionBounds.left + lastSelectionBounds.width / 2;
+            centerY = lastSelectionBounds.top + lastSelectionBounds.height / 2;
+        } else {
+            // Fallback: calculate centroid of selected pips
+            let sumX = 0, sumY = 0;
+            selectedPips.forEach(pip => {
+                sumX += parseFloat(pip.style.left);
+                sumY += parseFloat(pip.style.top);
+            });
+            centerX = sumX / selectedPips.size;
+            centerY = sumY / selectedPips.size;
+        }
 
         // Map occupied slots by UNSELECTED pips
         const occupiedGrid = getOccupiedSlots(selectedPips);
@@ -1118,12 +1275,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // We'll simulate finding N slots by running the search N times? 
         // Or one search that gathers N slots?
         // `findNearestFreeSlot` returns ONE.
-        // But we want a cluster around the centroid.
+        // But we want a cluster around the center.
         // It's efficient to just run a single BFS/Spiral that yields N slots.
-
-        // Let's reimplement a "Find K Nearest Slots" here, or just loop `findNearestFreeSlot`?
-        // If we loop `findNearestFreeSlot`, we must update `occupiedGrid` each time.
-        // The centroid stays roughly the same (or we start search from same center).
 
         const centerGrid = getGridPos(centerX, centerY);
         const searchStart = { x: centerX, y: centerY }; // Reuse logic if possible?
@@ -1415,7 +1568,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (snapshotBtn) {
         snapshotBtn.addEventListener('click', async () => {
             snapshotBtn.disabled = true;
-            snapshotBtn.innerText = 'Capturing...';
+            snapshotBtn.innerText = '⏳';
 
             try {
                 // Capture the grid area only.
@@ -1443,21 +1596,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     try {
                         const item = new ClipboardItem({ 'image/png': blob });
                         await navigator.clipboard.write([item]);
-                        snapshotBtn.innerText = 'Copied!';
+                        snapshotBtn.innerText = '✓';
                     } catch (err) {
                         console.error('Clipboard write failed', err);
-                        snapshotBtn.innerText = 'Error';
+                        snapshotBtn.innerText = '✗';
                     }
                     setTimeout(() => {
-                        snapshotBtn.innerText = 'Snapshot';
+                        snapshotBtn.innerText = '📷';
                         snapshotBtn.disabled = false;
                     }, 2000);
                 });
             } catch (err) {
                 console.error('Snapshot failed', err);
-                snapshotBtn.innerText = 'Error';
+                snapshotBtn.innerText = '✗';
                 setTimeout(() => {
-                    snapshotBtn.innerText = 'Snapshot';
+                    snapshotBtn.innerText = '📷';
                     snapshotBtn.disabled = false;
                 }, 2000);
             }
