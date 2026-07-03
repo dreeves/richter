@@ -1759,9 +1759,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // good, ambiguous, bad, catastrophic). Each must sum to 100.
     // These are archetypes, not attributed forecasts, except silver and dreev. NB: the counts are reversed top/bottom from what you see visually in the chart.
     const PRESETS = {
-        // Nate Silver's distribution from On the Edge, as reproduced in
-        // https://agifriday.substack.com/p/ai-risk-and-the-technological-richter
-        // (counted from the chart image; sums to exactly 100)
+        // Nate Silver's distribution from On the Edge (Aug 2024)
         silver: [
             0,  0, 0, 0, 0,
             0, 13, 9, 3, 0,
@@ -1769,6 +1767,8 @@ document.addEventListener('DOMContentLoaded', () => {
             9,  9, 4, 4, 4,
             5,  0, 0, 0, 5,
         ],
+        // Daniel Reeves (Feb 2025), the chart in
+        // https://agifriday.substack.com/p/ai-risk-and-the-technological-richter
         dreev1: [
              0,  0, 0, 0, 0,
              0, 31, 4, 7, 0,
@@ -1776,6 +1776,8 @@ document.addEventListener('DOMContentLoaded', () => {
              2,  2, 1, 2, 1,
              6,  0, 0, 0, 11,
         ],
+        // dreev Feb 2026: 
+        // https://agifriday.substack.com/p/crashla
         dreev2: [
              0, 0, 0, 0, 0,
              0, 7, 5, 4, 0,

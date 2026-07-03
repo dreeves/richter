@@ -64,15 +64,36 @@ test.describe('Presets', () => {
         await expect(page.locator('#grand-total')).toContainText('100%');
     });
 
-    test('Nate Silver preset matches the On the Edge chart totals', async ({ page }) => {
+    test('Nate Silver preset matches his On the Edge distribution', async ({ page }) => {
         await page.selectOption('#preset-select', 'silver');
 
-        await expect(page.locator('#total-epochal')).toContainText('17%');
-        await expect(page.locator('#total-millenary')).toContainText('8%');
-        await expect(page.locator('#total-centennial')).toContainText('33%');
-        await expect(page.locator('#total-decennial')).toContainText('42%');
-        await expect(page.locator('#total-catastrophic')).toContainText('16%');
+        await expect(page.locator('#total-epochal')).toContainText('10%');
+        await expect(page.locator('#total-millenary')).toContainText('30%');
+        await expect(page.locator('#total-centennial')).toContainText('35%');
+        await expect(page.locator('#total-decennial')).toContainText('25%');
+        await expect(page.locator('#total-catastrophic')).toContainText('10%');
         await expect(page.locator('#grand-total')).toContainText('100%');
+    });
+
+    test('every preset applies cleanly and sums to 100%', async ({ page }) => {
+        // Catches presets that don't sum to 100 (the app throws on those)
+        // without hardcoding the preset list here.
+        const errors = [];
+        page.on('pageerror', e => errors.push(e.message));
+
+        const values = await page.locator('#preset-select option:not([disabled])')
+            .evaluateAll(opts => opts.map(o => o.value));
+        expect(values.length).toBeGreaterThan(0);
+
+        for (const v of values) {
+            await page.selectOption('#preset-select', v);
+            await expect(page.locator('#grand-total')).toContainText('100%');
+            // The truthful-sync leaves the dropdown on v iff the applied
+            // distribution actually matches preset v
+            await expect(page.locator('#preset-select')).toHaveValue(v);
+        }
+
+        expect(errors).toEqual([]);
     });
 
     test('select shows the applied preset', async ({ page }) => {
