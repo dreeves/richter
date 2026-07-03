@@ -603,6 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const code = encodeDistribution();
         const newUrl = `${window.location.pathname}?d=${code}`;
         window.history.replaceState({ path: newUrl }, '', newUrl);
+        syncPresetSelect();
     }
 
 
@@ -658,6 +659,9 @@ document.addEventListener('DOMContentLoaded', () => {
         selectionBox.style.width = '0px';
         selectionBox.style.height = '0px';
         selectionBox.style.display = 'block';
+        // Hide cell steppers while the box is up: they sit above the box in
+        // z-order and would steal clicks meant for its handles
+        document.body.classList.add('box-active');
 
         // Snapshot ALL pips for layouts and restoration
         allPipsInitialPositions.clear();
@@ -768,6 +772,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedPips.forEach(pip => pip.classList.remove('selected'));
         selectedPips.clear();
         selectionBox.style.display = 'none';
+        document.body.classList.remove('box-active');
         lastSelectionBounds = null;
         updateCounters();
         updateSelectionUI(); // button state
@@ -1571,7 +1576,252 @@ document.addEventListener('DOMContentLoaded', () => {
             // Ensure we don't clobber the threshold-label
             annualCell.appendChild(div);
         }
+
+        // 3. Cell Steppers (+/− controls)
+        // Re-rendered on every update so the disabled states stay correct.
+        // (The prob cells were wiped above; the annual cell needs explicit removal.)
+        const renderStepper = (rKey, cKey, count) => {
+            const minusDisabled = count === 0;
+            // No pips anywhere else to pull from
+            const plusDisabled = counts.total - count === 0;
+            const div = document.createElement('div');
+            div.className = 'cell-stepper';
+            div.innerHTML =
+                `<button class="stepper-btn" data-r="${rKey}" data-c="${cKey}" data-delta="-1"` +
+                ` title="Move 1% to the biggest pile"${minusDisabled ? ' disabled' : ''}>&minus;</button>` +
+                `<button class="stepper-btn" data-r="${rKey}" data-c="${cKey}" data-delta="1"` +
+                ` title="Move 1% here from the biggest pile"${plusDisabled ? ' disabled' : ''}>+</button>`;
+            return div;
+        };
+
+        document.querySelectorAll('.prob-cell').forEach(cell => {
+            if (cell.classList.contains('annual-merged-cell')) return;
+
+            const parentRow = cell.closest('tr');
+            const rKey = parentRow ? parentRow.dataset.row : null;
+            const cKey = cell.dataset.col;
+
+            if (rKey && cKey) {
+                cell.appendChild(renderStepper(rKey, cKey, counts.cells[`${rKey}_${cKey}`] || 0));
+            }
+        });
+
+        const existingAnnualStepper = annualCell.querySelector('.cell-stepper');
+        if (existingAnnualStepper) existingAnnualStepper.remove();
+        // The annual cell spans all 5 columns; '*' means the whole row.
+        annualCell.appendChild(renderStepper('annual', '*', counts.rows['annual'] || 0));
     }
+
+    // --- Cell Steppers ---
+    // Move one pip (1%) into or out of a bucket without dragging.
+    // The counterpart bucket is always the fullest bucket outside the target,
+    // so + takes from the biggest pile and − returns to the biggest pile.
+
+    function getPipsByBucket() {
+        updateGridBounds();
+        const buckets = BUCKET_ORDER.map(b => ({ r: b.r, c: b.c, pips: [] }));
+
+        document.querySelectorAll('.hexagon').forEach(pip => {
+            const cx = parseFloat(pip.style.left) + PIP_RADIUS;
+            const cy = parseFloat(pip.style.top) + PIP_RADIUS;
+
+            let rKey = null, cKey = null;
+            for (const r of cachedRowBounds) {
+                if (cy >= r.top && cy <= r.bottom) {
+                    rKey = r.key;
+                    break;
+                }
+            }
+            for (const c of cachedColBounds) {
+                if (cx >= c.left && cx <= c.right) {
+                    cKey = c.key;
+                    break;
+                }
+            }
+
+            const bucket = buckets.find(b => b.r === rKey && b.c === cKey);
+            if (bucket) bucket.pips.push(pip);
+        });
+
+        return buckets;
+    }
+
+    // Page-coordinate rect of a bucket. colKey '*' means the whole annual
+    // row (the merged cell).
+    function getBucketRect(rowKey, colKey) {
+        if (colKey === '*') {
+            const cell = document.querySelector('.annual-merged-cell');
+            const rect = cell.getBoundingClientRect();
+            return {
+                left: rect.left + window.scrollX,
+                top: rect.top + window.scrollY,
+                width: rect.width,
+                height: rect.height
+            };
+        }
+
+        const rowTr = document.querySelector(`tr[data-row="${rowKey}"]`) || document.querySelector('tr.annual-row');
+        const rowRect = rowTr.getBoundingClientRect();
+        const colTh = document.querySelector(`th[data-col="${colKey}"]`);
+        const colRect = colTh.getBoundingClientRect();
+        return {
+            left: colRect.left + window.scrollX,
+            top: rowRect.top + window.scrollY,
+            width: colRect.width,
+            height: rowRect.height
+        };
+    }
+
+    // Random collision-free spot in a rect; after max attempts we accept
+    // overlap, same fallback as placePipsFromDistribution.
+    function findFreeSpotInRect(rect) {
+        const pips = document.querySelectorAll('.hexagon');
+        let x, y;
+        for (let attempts = 0; attempts < 500; attempts++) {
+            x = Math.random() * (rect.width - PIP_SIZE) + rect.left;
+            y = Math.random() * (rect.height - PIP_SIZE) + rect.top;
+
+            let collision = false;
+            for (const p of pips) {
+                const dx = parseFloat(p.style.left) - x;
+                const dy = parseFloat(p.style.top) - y;
+                if (dx * dx + dy * dy < PIP_SIZE * PIP_SIZE) {
+                    collision = true;
+                    break;
+                }
+            }
+            if (!collision) break;
+        }
+        return { x, y };
+    }
+
+    function nearestPip(pips, x, y) {
+        let best = null, bestDist = Infinity;
+        pips.forEach(p => {
+            const dx = parseFloat(p.style.left) - x;
+            const dy = parseFloat(p.style.top) - y;
+            const d = dx * dx + dy * dy;
+            if (d < bestDist) {
+                bestDist = d;
+                best = p;
+            }
+        });
+        return best;
+    }
+
+    function stepCell(rowKey, colKey, delta) {
+        const buckets = getPipsByBucket();
+        const inTarget = b => b.r === rowKey && (colKey === '*' || b.c === colKey);
+
+        // Fullest bucket outside the target = the pile we trade with.
+        // Ties go to the first in BUCKET_ORDER.
+        let pile = null;
+        buckets.forEach(b => {
+            if (inTarget(b)) return;
+            if (b.pips.length === 0) return;
+            if (!pile || b.pips.length > pile.pips.length) pile = b;
+        });
+
+        if (delta > 0) {
+            if (!pile) return; // Every on-grid pip is already in this cell
+            const dest = findFreeSpotInRect(getBucketRect(rowKey, colKey));
+            const pip = nearestPip(pile.pips, dest.x, dest.y);
+            saveHistory();
+            // Pips have a CSS left/top transition, so this animates the flight
+            pip.style.left = dest.x + 'px';
+            pip.style.top = dest.y + 'px';
+        } else {
+            const targetPips = buckets.filter(inTarget).flatMap(b => b.pips);
+            if (targetPips.length === 0) return; // Nothing to remove
+            if (!pile) return; // Nowhere to send it (all mass is here)
+            const dest = findFreeSpotInRect(getBucketRect(pile.r, pile.c));
+            const pip = nearestPip(targetPips, dest.x, dest.y);
+            saveHistory();
+            pip.style.left = dest.x + 'px';
+            pip.style.top = dest.y + 'px';
+        }
+
+        updateCounters();
+        updateUrlState();
+    }
+
+    // Event delegation because the stepper buttons are re-created on every
+    // updateCounters call.
+    document.querySelector('table').addEventListener('click', (e) => {
+        const btn = e.target.closest('.stepper-btn');
+        if (!btn) return;
+        stepCell(btn.dataset.r, btn.dataset.c, parseInt(btn.dataset.delta, 10));
+    });
+
+    // --- Presets ---
+    // Counts in BUCKET_ORDER order: rows bottom-up (annual, decennial,
+    // centennial, millenary, epochal), columns in DOM order (positive,
+    // good, ambiguous, bad, catastrophic). Each must sum to 100.
+    // These are archetypes, not attributed forecasts.
+    const PRESETS = {
+        uniform: [
+            0, 0, 0, 0, 0,
+            5, 5, 5, 5, 5,
+            5, 5, 5, 5, 5,
+            5, 5, 5, 5, 5,
+            5, 5, 5, 5, 5,
+        ],
+        skeptic: [
+            0, 0, 0, 0, 0,
+            10, 20, 15, 10, 0,
+            5, 15, 10, 5, 0,
+            2, 3, 2, 1, 0,
+            1, 0, 0, 0, 1,
+        ],
+        optimist: [
+            0, 0, 0, 0, 0,
+            2, 3, 0, 0, 0,
+            10, 10, 3, 2, 0,
+            20, 15, 3, 2, 0,
+            20, 5, 2, 1, 2,
+        ],
+        doomer: [
+            0, 0, 0, 0, 0,
+            0, 2, 3, 0, 0,
+            2, 3, 5, 5, 0,
+            3, 5, 5, 10, 7,
+            5, 5, 5, 10, 25,
+        ],
+        bimodal: [
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+            5, 5, 5, 5, 0,
+            10, 5, 3, 2, 5,
+            25, 5, 0, 0, 25,
+        ],
+    };
+
+    const presetSelect = document.getElementById('preset-select');
+    presetSelect.addEventListener('change', () => {
+        const counts = PRESETS[presetSelect.value];
+        if (!counts) throw new Error(`Unknown preset: ${presetSelect.value}`);
+        const sum = counts.reduce((a, b) => a + b, 0);
+        if (sum !== 100) throw new Error(`Preset "${presetSelect.value}" sums to ${sum}, not 100`);
+
+        saveHistory();
+        clearSelection();
+        placePipsFromDistribution(counts, allPips);
+        updateCounters();
+        updateUrlState();
+    });
+
+    // Keep the dropdown truthful: show a preset's name iff the current
+    // distribution exactly matches it, otherwise the "Presets" placeholder.
+    // Called from updateUrlState so it tracks every mutation, including undo.
+    function syncPresetSelect() {
+        const counts = getPipsByBucket().map(b => b.pips.length);
+        const match = Object.keys(PRESETS).find(name =>
+            PRESETS[name].every((c, i) => c === counts[i]));
+        presetSelect.value = match || '';
+    }
+
+    // Reflect the initial state (a fresh load matches the Uniform preset)
+    syncPresetSelect();
 
     // Snapshot Logic
     const snapshotBtn = document.getElementById('snapshot-btn');
@@ -1598,6 +1848,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Still ignore the undo container inside the body render just in case
                         if (element.id === 'undo-container') return true;
                         if (element.classList.contains('selection-box')) return true;
+                        if (element.classList.contains('cell-stepper')) return true;
                         return false;
                     }
                 });
