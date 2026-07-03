@@ -1,58 +1,11 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Config
-    const PIP_SIZE = 20; // Visual size
+    const PIP_SIZE = 20; // Pip diameter in px, also the collision distance
     const PIP_RADIUS = PIP_SIZE / 2;
-    // Using a slightly smaller effective size for collision to allow tight packing? 
-    // Or strictly PIP_SIZE. Let's start with strict.
-    const COLLISION_RADIUS = PIP_SIZE;
-    const SNAP_TO_GRID = false;
 
-    // URL State Config
-    const CELL_ORDER = [
-        // Prioritize "likely empty" cells to keep BigInt small (Combinadics optimization)
-        // Annual Row (Row 5 - usually empty)
-        'annual_positive', 'annual_neutral', 'annual_negative',
-        // We merged annual row in UI, but logically it might be treated as one bucket?
-        // Wait, UI has "colspan=5". It's one big bucket visually.
-        // But our `cachedRowBounds` treats it as `row: annual`.
-        // Let's treat the entire Annual Row as ONE bucket in the encoding if it holds pips.
-        // Actually, let's check how `updateCounters` works. It has keys like 'annual'.
-        // Rows: epochal, millenary, centennial, decennial, annual.
-        // Cols: positive, neutral, negative, off_charts...
-        // The intersection defines the bucket.
-        // For Annual, we just have 'annual'. It's one row. 
-        // Does it have columns? The pips have x-coordinates.
-        // `updateCounters` tracks `counts.rows['annual']`.
-        // It DOES NOT track `counts.cols` for annual row specifically in a unique way?
-        // In `updateCounters`, we do: if (rowKey && colKey).
-        // If I drop in Annual (merged), `rowKey`='annual'. `colKey` depends on X.
-        // So Annual row effectively has 5 columns too?
-        // Yes, `colKey` is calculated by X position.
-        // So we have 5 rows * 5 cols = 25 buckets.
+    // Pip positions live in the DOM (style.left/top); everything else --
+    // counts, totals, the URL -- is derived from them.
 
-        // Custom Order:
-        // 1. Annual Row (5 buckets) - Most likely empty
-        // 2. Outer Edges of other rows (likely empty)
-        // 3. Center (likely full)
-        // Actually, simple row-major or specific ordering is fine.
-        // Let's just list the keys.
-    ];
-
-    // We need a stable mapping of 0-24 index to (rowKey, colKey).
-    // Let's define the 25 keys explicitly.
-    const ROWS = ['epochal', 'millenary', 'centennial', 'decennial', 'annual'];
-    const COLS = ['positive', 'neutral', 'negative', 'off_charts_pos', 'off_charts_neg'];
-    // Wait, the col keys in HTML are:
-    // positive, neutral, negative... wait, let's verify HTML.
-    // HTML headers: Positive, Neutral, Negative, Off Charts (+), Off Charts (-)
-    // data-col attributes?
-
-    // Let's Verify HTML data attributes first before hardcoding.
-
-    // State
-    // We strictly track positions via the DOM left/top for truth, but we can cache if needed.
-    // State
-    // We strictly track positions via the DOM left/top for truth, but we can cache if needed.
     // URL Encoding Helpers
     const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -87,24 +40,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return res;
     }
 
-    // Define 25 Buckets Order
-    // Ordered to prioritize empty buckets first (smaller combinatorial index).
-    // Let's look at index.html values.
-    // Rows: epochal, millenary, centennial, decennial, annual
-    // Cols: off-pos, positive, neutral, negative, off-neg (Standard order?)
-    // Let's assume standard reading order for simplicity unless user insists on specific op.
-    // User asked for "custom-ordering... like middle 3 cells...".
-    // Let's define the exact array of (Row, Col) pairs.
-    const BUCKETS = [];
-    const ROW_KEYS = ['epochal', 'millenary', 'centennial', 'decennial', 'annual'];
-    // Col keys need verification from HTML.
-    // Let's assume: 'positive', 'neutral', 'negative', 'off-pos', 'off-neg' based on text.
-    // Actually, I'll read them from the DOM in init to be safe.
-
-    // Placeholder to be filled in DOMContentLoaded
+    // The 25 buckets (5 rows x 5 columns) as {r, c} pairs in a canonical
+    // order, built during init below
     let BUCKET_ORDER = [];
 
-    // Undo stack: Array of Map<id, {left, top}>
+    // Undo stack: snapshots of every pip's position
     const historyStack = [];
     let isUndoing = false;
 
@@ -122,7 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // StateCache for high-perf counter updates
+    // Cached row/column pixel bounds (page coordinates) so per-frame
+    // counting during drags avoids layout queries
     let cachedRowBounds = [];
     let cachedColBounds = [];
 
@@ -150,18 +91,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let boxInitialLeft, boxInitialTop, boxInitialWidth, boxInitialHeight;
 
     const hexagonContainer = document.getElementById('hexagon-container');
-    // undo container
     const undoContainer = document.getElementById('undo-container');
 
-    // Add Undo Button to UI
+    // Undo button (created here rather than in HTML so `undo` is in scope)
     const undoButton = document.createElement('button');
     undoButton.className = 'icon-btn';
     undoButton.innerText = '↩';
     undoButton.title = 'Undo';
-    undoButton.disabled = true; // Initially disabled
+    undoButton.disabled = true;
     undoButton.addEventListener('click', undo);
-
-    // Position Undo button in the dedicated container
     undoContainer.appendChild(undoButton);
 
     // Action Buttons
@@ -170,24 +108,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // State for Box Selection
     let isBoxSelecting = false;
-    let justFinishedBoxSelection = false; // Prevent click from clearing after touch drag
-    let preventClearSelection = false; // Flag to stop click from clearing immediately
+    let preventClearSelection = false; // Stops the click after a box drag from clearing the selection
     let boxStartX, boxStartY;
 
-
-    // Helpers for Grid Calculation
-    // Pointy-topped hexes (which we seem to be changing to or using) usually pack with:
-    // Vertical spacing = 3/4 * Height.
-    // Horizontal spacing = Width (or sqrt(3)/2 * Height for equilateral).
-    // Our SVG is 20x20 squashed hexagon?
-    // Let's settle on a nice tight packing config.
+    // Hex grid for snap targets: offset rows, packed tighter vertically
+    // than the pip size for a honeycomb feel
     const hexSize = 20;
-    // Tighter spacing to encourage "honeycomb" feel
     const horizontalSpacing = hexSize * 1.0;
     const verticalSpacing = hexSize * 0.8;
 
+    // Neighbor offsets for the spiral searches; offset rows alternate
+    // between these two sets
+    const HEX_DIRS_EVEN = [
+        { dRow: -1, dCol: -1 }, { dRow: -1, dCol: 0 },
+        { dRow: 0, dCol: -1 }, { dRow: 0, dCol: 1 },
+        { dRow: 1, dCol: -1 }, { dRow: 1, dCol: 0 }
+    ];
+    const HEX_DIRS_ODD = [
+        { dRow: -1, dCol: 0 }, { dRow: -1, dCol: 1 },
+        { dRow: 0, dCol: -1 }, { dRow: 0, dCol: 1 },
+        { dRow: 1, dCol: 0 }, { dRow: 1, dCol: 1 }
+    ];
+
     function getGridPos(x, y) {
-        // We use Math.floor/round logic to find nearest "cell"
         const row = Math.round(y / verticalSpacing);
         const isEven = row % 2 === 0;
         const xOffset = isEven ? 0 : horizontalSpacing / 2;
@@ -240,37 +183,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initialization
-    // Verify Col Keys from DOM
+    // Column keys come from the DOM so the HTML stays the source of truth
     const colHeaderCells = document.querySelectorAll('thead th[data-col]');
     const COL_KEYS = Array.from(colHeaderCells).map(th => th.dataset.col);
-    // Note: If data-col is missing, we have a problem. 
-    // Based on previous reads, we used `data-col` in `updateGridBounds`.
 
-    // Construct BUCKET_ORDER (25 items)
-    // Preference: Annual Row First (5 items).
-    // Then Decennial (5 items).
-    // Then Centennial...
-    // This puts the "bottom" rows (often empty or specific) at the start (Least Significant in Combinadics?).
-    // Combinadic Encoding: 
-    // We map distribution (c1, c2, ... c25) to a single index.
-    // Sum nCr(yi, i+1).
-    // Where yi are the positions of the "stars" (items) + "bars" (separators).
-    // Or we can use the "Bars" positions.
-    // We have 100 items + 24 bars. Positions 0..123.
-    // We choose 24 positions for the bars.
-    // The "index" is determining where the 24 bars are.
-    // If we order bins such that "most full" bins are last, the bars are pushed to higher indices?
-    // Actually, if we put "likely empty" bins FIRST, the first few bars appear early (small indices).
-    // `nCr(small, k)` is small.
-    // So YES, likely-empty bins should be FIRST in the list.
-
-    // Order: Annual -> Decennial -> Centennial -> Millenary -> Epochal
-    // Within Row: Off-Charts -> Neg/Pos -> Neutral (Assuming Neutral is fullest).
-
-    // Let's just do Bottom-Up Row-Major for now.
+    // BUCKET_ORDER is bottom-up row-major: the annual and decennial rows
+    // are usually the emptiest, and empty buckets early in the order give
+    // small bar positions in the combinadic encoding (see
+    // encodeDistribution), hence shorter URLs
     ['annual', 'decennial', 'centennial', 'millenary', 'epochal'].forEach(r => {
-        // For columns, we just take them in order, or maybe "Off" first?
-        // Let's just use the DOM order of COL_KEYS for consistency.
         COL_KEYS.forEach(c => {
             BUCKET_ORDER.push({ r, c });
         });
@@ -289,23 +210,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Initialization logic...
-    const cells = document.querySelectorAll('.prob-cell'); // These are only the 20 main cells?
-    // Wait, Annual row has a merged cell but we treat it as 5 virtual columns in logic?
-    // The HTML has `tr.annual-row td.annual-merged-cell`.
-    // It does NOT have individual `.prob-cell`s for columns.
-    // So `updateCounters` works by geometry (X pos).
-    // But for **Placement** (dealing pips), we need valid target rectangles.
-    // If we want to place a pip in "Annual / Col Positive", we need that rect.
-    // We can compute it: AnnualRow.Top/Bottom + ColHeader[Positive].Left/Right.
+    // Note on the annual row: it has one merged cell rather than per-column
+    // prob-cells, so bucket membership there is decided by x-position, and
+    // placement rects come from crossing the row with the column headers.
 
-    let pipIndex = 0;
-    const allPips = []; // {left, top, id}
+    const allPips = []; // {el, id}; placePipsFromDistribution adds .x/.y
 
-    // Create 100 pips
-    // If URL loaded, we place them according to distribution.
-    // Else random in default cells.
-
+    // Create the 100 pips, 1% each
     for (let i = 0; i < 100; i++) {
         const pip = document.createElement('div');
         pip.classList.add('hexagon');
@@ -313,9 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
         pip.id = `pip-${i}`;
         pip.innerHTML = `<svg viewBox="0 0 100 100" width="20" height="20"><polygon points="50,0 93,25 93,75 50,100 7,75 7,25" fill="#000000"/></svg>`;
 
-        // Position will be set later
-        // Just append for now
-        pip.style.position = 'absolute';
+        pip.style.position = 'absolute'; // Positioned below, once all exist
         pip.addEventListener('mousedown', (e) => handlePipMouseDown(e, pip));
         pip.addEventListener('touchstart', (e) => handlePipMouseDown(e, pip), { passive: false });
         hexagonContainer.appendChild(pip);
@@ -332,77 +241,59 @@ document.addEventListener('DOMContentLoaded', () => {
     updateSelectionUI();
 
     function placePipsRandomly(pips) {
-        // Original logic: Top 4 rows (20 cells), 5 pips each.
-        // We simulate this by creating a distribution? 
-        // Or just run the old logic.
-        // Let's use old logic for "Random Init".
-        // The old logic iterated `cells` (prob-cells).
-        // `cells` includes the 20 cells.
-
-        // Distribution: 5 pips in each of the first 20 buckets (Epochal..Decennial). 0 in Annual.
-        // We can just use our `placePipsFromDistribution` if we construct the counts!
-        // This unifies the logic.
-
+        // Default layout: 5% in each of the 20 main cells, annual row
+        // empty. BUCKET_ORDER is bottom-up, so indices 0-4 are annual.
         const counts = Array(25).fill(0);
-        // Map 20 cells to our BUCKET_ORDER indices.
-        // BUCKET_ORDER is Annual(5)..Decinnial(5)..Centennial(5)..Millenary(5)..Epochal(5).
-        // Indices 0-4 are Annual (Empty).
-        // Indices 5-24 are the rest.
         for (let i = 5; i < 25; i++) {
             counts[i] = 5;
         }
         placePipsFromDistribution(counts, pips);
     }
 
+    // counts: 25 numbers in BUCKET_ORDER order, summing to 100. Pips get
+    // random non-overlapping positions within their bucket's rect.
     function placePipsFromDistribution(counts, pips) {
-        // counts is array of 25 numbers summing to 100.
         let pipCursor = 0;
 
-        // Iterate buckets
         counts.forEach((count, idx) => {
             if (count === 0) return;
 
             const bucket = BUCKET_ORDER[idx]; // {r, c}
 
-            // Find bounds for this bucket
-            // Row bounds
+            // Bucket rect = row bounds x column-header bounds (the annual
+            // row falls back to its merged-row tr)
             const rowTr = document.querySelector(`tr[data-row="${bucket.r}"]`) || document.querySelector(`tr.annual-row`);
             const rowRect = rowTr.getBoundingClientRect();
             const top = rowRect.top + window.scrollY;
             const height = rowRect.height;
 
-            // Col bounds
-            // We need the TH with data-col
             const colTh = document.querySelector(`th[data-col="${bucket.c}"]`);
             const colRect = colTh.getBoundingClientRect();
             const left = colRect.left + window.scrollX;
             const width = colRect.width;
 
-            // Place `count` pips in this rect
             for (let k = 0; k < count; k++) {
                 if (pipCursor >= pips.length) break;
-                const pip = pips[pipCursor]; // Don't increment yet
+                const pip = pips[pipCursor];
 
                 let x, y, attempts = 0;
                 let valid = false;
 
-                // We need to check against ALL pips that have been placed so far.
-                // pips[0]...pips[pipCursor-1] are already active.
-
+                // Random spot in the rect, collision-checked against the
+                // pips placed earlier in this pass; after max attempts we
+                // accept overlap rather than loop forever
                 while (!valid && attempts < 500) {
-                    // Random pos in rect (padding PIP_RADIUS effectively for diameter=PIP_SIZE)
                     x = Math.random() * (width - PIP_SIZE) + left;
                     y = Math.random() * (height - PIP_SIZE) + top;
 
                     let collision = false;
-                    // Check against valid placed pips
                     for (let j = 0; j < pipCursor; j++) {
                         const other = pips[j];
                         const ox = other.x;
                         const oy = other.y;
 
                         const dist = Math.sqrt((x - ox) ** 2 + (y - oy) ** 2);
-                        if (dist < PIP_SIZE) { // PIP_SIZE threshold
+                        if (dist < PIP_SIZE) {
                             collision = true;
                             break;
                         }
@@ -411,13 +302,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     attempts++;
                 }
 
-                // If still invalid (crowded), fallback?
-                // We just accept the last tried position (overlap).
-                // Or maybe spiral? For now, 500 attempts is robust enough for typical usage.
-
                 pip.el.style.left = x + 'px';
                 pip.el.style.top = y + 'px';
-                // Store for next iteration
+                // Cached for the collision checks above
                 pip.x = x;
                 pip.y = y;
 
@@ -426,11 +313,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Serialize the current distribution as a base-62 string for the URL.
+    // Stars and bars: a distribution of 100 pips over 25 buckets is a
+    // choice of 24 bar positions among 124 slots, and the combinatorial
+    // number system maps that choice to a single integer.
     function encodeDistribution() {
-        // Count pips in BUCKET_ORDER
-        // Re-calculate counts from current DOM positions
+        // Recount pips into buckets from their current DOM positions
         updateGridBounds();
-        // We can rely on `updateCounters` logic but we need specific bucket array.
 
         const bucketCounts = Array(25).fill(0);
         const pips = document.querySelectorAll('.hexagon');
@@ -461,28 +350,18 @@ document.addEventListener('DOMContentLoaded', () => {
             let idx = -1;
 
             if (rKey && cKey) {
-                // Find index in BUCKET_ORDER
                 idx = BUCKET_ORDER.findIndex(b => b.r === rKey && b.c === cKey);
             }
 
             if (idx !== -1) {
                 bucketCounts[idx]++;
             } else {
-                // Pip off grid?
-                // Logic says we encode "Distribution".
-                // We map off-grid pips to the NEAREST bucket to preserve the 100-pip invariant.
-                // This is better than dumping them all in bucket 0.
-
+                // Off-grid pips map to the nearest bucket center so the
+                // 100-pip invariant survives encoding
                 let minDist = Infinity;
                 let bestIdx = 0;
 
-                // Find nearest bucket center
-                // We need the Rects of all 25 buckets?
-                // We can iterate BUCKET_ORDER and check cached bounds.
-                // It's a bit heavy but N=100 pips * 25 buckets = 2500 ops. Fast.
-
                 BUCKET_ORDER.forEach((b, bIdx) => {
-                    // Reconstruct rect from cachedRowBounds / cachedColBounds
                     const r = cachedRowBounds.find(rb => rb.key === b.r);
                     const c = cachedColBounds.find(cb => cb.key === b.c);
 
@@ -502,44 +381,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Check sum
         const sum = bucketCounts.reduce((a, b) => a + b, 0);
         if (sum !== 100) {
-            // Should not happen if we catch all pips
+            // Should not happen; the nearest-bucket fallback catches all pips
             bucketCounts[0] += (100 - sum);
         }
 
-        // Encode (Stars & Bars / Combinadics)
-        // We are choosing positions for 24 bars among (100+24) slots.
-        // We map counts [c0, c1, ... c24] to Bar positions.
-        // Bar 1 is at c0.
-        // Bar 2 is at c0 + c1 + 1.
-        // Bar k is at (Sum_{i=0}^{k-1} ci) + (k-1). 
-        // Wait, Combinadic definition:
-        // Position of bars in the sequence of 124 items.
-        // Sequence: * * * | * * | * ...
-        // Item indices 0..123.
-        // We strictly increase bar positions.
-
+        // Lay the buckets out as pips and bars: * * * | * * | ... over slot
+        // indices 0..123. Bar i sits at (pips so far) + (bars so far), so
+        // the bar positions are strictly increasing.
         const bars = [];
         let currentPos = 0;
         for (let i = 0; i < 24; i++) {
             currentPos += bucketCounts[i];
             bars.push(BigInt(currentPos + i));
-            // Position is (pips so far) + (bars so far)
-            // Bar 0 is after c0 pips. Pos = c0. (0-indexed? No, it occupies a slot).
-            // Sequence indices: 0..(100+24-1) = 123.
-            // If c0=5, we have *****|. Bar is at index 5.
-            // Next starts at 6.
         }
 
-        // Combinadics Index = Sum( nCr(BarPos_i, i+1) )
-        // Using "Combinatorial Number System" variant
-        // N = C(b24, 24) + ... + C(b1, 1).
-        // Since our bars are strictly increasing b0 < b1 < ... < b23.
-        // We use the positions as the "chosen" numbers.
-        // N = Sum_{k=0}^{23} nCr(bars[k], k+1).
-
+        // Combinatorial number system: a strictly increasing sequence
+        // b0 < b1 < ... < b23 maps to the unique index
+        // Sum_k nCr(b_k, k+1)
         let index = 0n;
         for (let k = 0; k < 24; k++) {
             index += nCr(bars[k], BigInt(k + 1));
@@ -548,22 +408,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return toBase62(index);
     }
 
+    // Inverse of encodeDistribution: base-62 string back to bucket counts
     function decodeDistribution(str) {
         let index = fromBase62(str);
 
-        // Decode Combinadics
-        // We need to find purely strictly increasing bars [b0...b23] such that Sum nCr matches.
-        // We do this greedily from largest k (23) down to 0.
-        // Find largest b23 such that nCr(b23, 24) <= index.
-
+        // Recover the bar positions greedily from the largest k down:
+        // b_k is the largest v with nCr(v, k+1) <= the remaining index.
+        // A linear scan down from the previous bar is fast enough.
         const bars = new Array(24);
 
-        // We act from k=23 down to 0
         for (let k = 23; k >= 0; k--) {
             const r = BigInt(k + 1);
-            // Search for v such that nCr(v, r) <= index
-            // Check upper bound? 124.
-            // Linear scan downwards from previous bar (or 124) is fast enough.
             let v = (k === 23) ? 123n : bars[k + 1] - 1n;
 
             while (true) {
@@ -577,22 +432,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Reconstruct counts from bars
-        // bars[i] is position of i-th bar.
-        // c0 = bars[0] - 0
-        // c1 = bars[1] - bars[0] - 1
-        // ...
-
+        // Bucket counts are the gaps between consecutive bars; the last
+        // bucket is whatever remains of the 100
         const counts = [];
         let prev = -1n;
         for (let i = 0; i < 24; i++) {
             counts.push(Number(bars[i] - prev - 1n));
             prev = bars[i];
         }
-        // Last bucket is remainder
-        // Total slots 124 (0..123). Total pips 100.
-        // Last count?
-        // simple: 100 - sum(counts)
         const currentSum = counts.reduce((a, b) => a + b, 0);
         counts.push(100 - currentSum);
 
@@ -610,7 +457,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Unified Box Selection Start (Mouse & Touch)
-    let initialSelection = new Set();
     let boxSelectionFrame = null;
     let allPipsInitialPositions = new Map();
 
@@ -633,20 +479,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (isPipCell) {
                 validStart = true;
-                // e.preventDefault(); // Moved down to call only if starting
             }
         }
 
-        if (!validStart) {
-            // If we click outside the box and pips, and NOT on a pip cell, 
-            // we should probably NOT clear selection immediately if the user 
-            // is trying to move the box or pips.
-            // But usually clicking "dead" space clears.
-            return;
-        }
+        if (!validStart) return;
 
-        // If we are here, we are starting a NEW box selection.
-        e.preventDefault(); // Stop scroll/etc
+        // Start a new box selection
+        e.preventDefault(); // Stop scroll etc
         clearSelection();
 
         isBoxSelecting = true;
@@ -711,8 +550,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const init = allPipsInitialPositions.get(pip);
             if (!init) return; // Should not happen
 
-            // Check intersection against INITIAL position (since we don't move them during drag)
-            // Or current? In passive mode, they don't move, so they are the same.
             const cx = parseFloat(pip.style.left) + PIP_RADIUS;
             const cy = parseFloat(pip.style.top) + PIP_RADIUS;
 
@@ -744,10 +581,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (boxSelectionFrame) cancelAnimationFrame(boxSelectionFrame);
             boxSelectionFrame = null;
 
-            // Persistent Selection State
+            // The box persists after mouseup so Squish/Spread can use it
             if (selectedPips.size > 0) {
-                // Capture box bounds for usage in Spread
-                // selectionBox is DOM relative.
                 lastSelectionBounds = {
                     left: parseFloat(selectionBox.style.left),
                     top: parseFloat(selectionBox.style.top),
@@ -757,11 +592,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Prevent the subsequent 'click' event from clearing this selection
                 preventClearSelection = true;
-                justFinishedBoxSelection = true;
                 setTimeout(() => {
                     preventClearSelection = false;
-                    justFinishedBoxSelection = false;
-                }, 500); // Longer timeout for mobile touch events
+                }, 500); // Long enough for mobile synthetic click events
             } else {
                 clearSelection();
             }
@@ -949,34 +782,13 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSelectionUI();
     }
 
-    function snapSelectedToGrid() {
-        const occupied = getOccupiedSlots(selectedPips);
-
-        selectedPips.forEach(pip => {
-            const currentLeft = parseFloat(pip.style.left);
-            const currentTop = parseFloat(pip.style.top);
-
-            // Simply find the nearest free slot to where the box placed it
-            const target = findNearestFreeSlot(currentLeft, currentTop, occupied);
-            const pos = getScreenPos(target.row, target.col);
-
-            pip.style.left = pos.x + 'px';
-            pip.style.top = pos.y + 'px';
-
-            occupied[`${target.row}_${target.col}`] = true;
-        });
-        updateCounters();
-    }
-
-
     // Helper functions for Smart Placement
+    // Reserve the nearest grid slot of every pip not in the excluded set
     function getOccupiedSlots(excludePipsSet = new Set()) {
         const occupied = {};
         const allPips = document.querySelectorAll('.hexagon');
         allPips.forEach(p => {
             if (!excludePipsSet.has(p)) {
-                // We map raw coordinates to grid slots to "reserve" them.
-                // Note: Pips might not be perfectly aligned, but we reserve the *nearest* slot.
                 const pos = getGridPos(parseFloat(p.style.left), parseFloat(p.style.top));
                 occupied[`${pos.row}_${pos.col}`] = true;
             }
@@ -984,30 +796,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return occupied;
     }
 
+    // Breadth-first spiral outward from the target point to the first
+    // unoccupied hex-grid slot
     function findNearestFreeSlot(targetX, targetY, occupiedSlotsMap) {
         const startGrid = getGridPos(targetX, targetY);
 
-        // If the exact slot is free, prefer exact position? 
-        // Logic: if we are resolving a collision, we likely want the NEAREST free slot.
-        // If the current position is valid (not in occupiedSlots), we technically don't need to move?
-        // But this function is usually called when we *know* there's a problem or we want to pack.
-        // Actually, for "Smart Drop", if there's no collision, we don't call this.
-        // If there IS a collision, we call this.
-
         const queue = [{ row: startGrid.row, col: startGrid.col }];
         const visited = new Set([`${startGrid.row}_${startGrid.col}`]);
-
-        // Spiral directions
-        const directionsEven = [
-            { dRow: -1, dCol: -1 }, { dRow: -1, dCol: 0 },
-            { dRow: 0, dCol: -1 }, { dRow: 0, dCol: 1 },
-            { dRow: 1, dCol: -1 }, { dRow: 1, dCol: 0 }
-        ];
-        const directionsOdd = [
-            { dRow: -1, dCol: 0 }, { dRow: -1, dCol: 1 },
-            { dRow: 0, dCol: -1 }, { dRow: 0, dCol: 1 },
-            { dRow: 1, dCol: 0 }, { dRow: 1, dCol: 1 }
-        ];
 
         let qIndex = 0;
         while (qIndex < 3000 && qIndex < queue.length) {
@@ -1015,11 +810,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const key = `${curr.row}_${curr.col}`;
 
             if (!occupiedSlotsMap[key]) {
-                // Found one!
                 return curr;
             }
 
-            const dirs = (Math.abs(curr.row) % 2 === 0) ? directionsEven : directionsOdd;
+            const dirs = (Math.abs(curr.row) % 2 === 0) ? HEX_DIRS_EVEN : HEX_DIRS_ODD;
             for (let d of dirs) {
                 const nRow = curr.row + d.dRow;
                 const nCol = curr.col + d.dCol;
@@ -1033,9 +827,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return startGrid; // Fallback
     }
 
-    // Helper functions
-
-    // Helper functions
+    // Selection helpers
     function selectPip(pip) {
         selectedPips.add(pip);
         pip.classList.add('selected');
@@ -1057,18 +849,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.type === 'mousedown' && e.button !== 0) return;
         if (e.type === 'touchstart') e.preventDefault(); // Stop mouse emulation
 
-
-        // Save history before interaction starts? 
-        // We only want to save if we actually MOVE.
-        // We'll capture start positions.
-
-
+        // Shift-click toggles membership in the selection
         if (e.shiftKey) {
             if (selectedPips.has(pip)) {
                 deselectPip(pip);
             } else {
                 selectPip(pip);
-                // Auto pack on single add?
                 saveHistory(); // Snapshot before pack
                 packSelection();
             }
@@ -1079,11 +865,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!selectedPips.has(pip)) {
             clearSelection();
             selectPip(pip);
-            // Don't auto-pack here yet, because we are likely about to DRAG.
-            // If we pack now, it might jump away from cursor.
-            // But if user just CLICKS, maybe they expect pack?
-            // "auto-pack as soon as pips are selected". 
-            // If dragging, we control position.
+            // No auto-pack here: a drag is probably starting and packing
+            // now would yank the pip away from the cursor
         }
 
         e.stopPropagation();
@@ -1106,14 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Save history state BEFORE dragged motion (snapshot of "before drag")
-        // But we only push to stack if the drag actually completes and changes things.
-        // We'll push `initialPositions` or full state? 
-        // Our history system saves FULL state of all 100 pips. 
-        // We push to stack only on drop?
-        // Let's implement `saveHistory()` which pushes current DOM state.
-        // We call it right before applying a permanent change.
-        saveHistory(); // Pushing the state BEFORE the move.
+        saveHistory(); // Snapshot the pre-drag state for undo
 
         document.body.style.userSelect = 'none';
 
@@ -1138,10 +914,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 pip.style.top = (init.top + dy) + 'px';
             });
 
-            // Real-time counter update
-            // Throttle? Or is geometric fast enough? 100 pips * 20 cells = 2000 checks. 
-            // It should be fine on modern CPU.
-            updateCounters(true); // pass true to indicate "use cached bounds"?
+            updateCounters(true); // Cached bounds; cheap enough per mousemove
         }
 
         function stop(e) {
@@ -1155,57 +928,34 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedPips.forEach(pip => pip.classList.remove('dragging'));
 
             if (!hasMoved) {
-                // If it was just a click (no drag), maybe we should auto-pack?
-                // "auto-pack... as soon as pips are selected"
+                // A plain click (no drag) packs the selection in place
                 packSelection();
                 return;
             }
 
-            // Smart Placement on Drop
+            // Smart placement on drop: a clean drop stays exactly where the
+            // user put it; only pips that collide get snapped to the
+            // nearest free hex-grid slot.
             const allPips = document.querySelectorAll('.hexagon');
 
-            // 1. Build map of currently occupied slots by UNSELECTED pips
-            //    (These are static walls we must respect)
+            // Slots taken by unselected pips are static walls; slots taken
+            // by pips placed earlier in this loop accumulate on top
             const occupiedSlots = getOccupiedSlots(selectedPips);
 
-            let placedCount = 0;
-
-            // 2. Iterate selected pips and resolve collisions
             selectedPips.forEach(pip => {
                 const currentLeft = parseFloat(pip.style.left);
                 const currentTop = parseFloat(pip.style.top);
-                // Center
                 const cx = currentLeft + 10;
                 const cy = currentTop + 10;
 
                 let collision = false;
 
-                // Check collision against UNSELECTED pips
-                // (We do a simple distance check first to see if we even NEED to snap)
-                // If user dropped it in empty space, we leave it (loose placement).
-                // Unless we want to force grid snap? 
-                // "be smarter about placement... where they don't fit" implies only fixing bad ones.
-
-                // Efficiency: Check distance against all other pips?
-                // Or just check if the grid slot is taken?
-                // Visual overlap matters more than grid slot logic for the trigger.
-
-                // Let's stick to the visual collision check dist < 20.
+                // Trigger on visual overlap with unselected pips only:
+                // selected pips kept their relative spacing during the
+                // group drag, and occupiedSlots resolves any pile-ups
                 for (let other of allPips) {
                     if (pip === other) continue;
-                    if (selectedPips.has(other)) {
-                        // If checking against other SELECTED pips:
-                        // Since we move them as a group, they maintain relative spacing.
-                        // However, if we process them sequentially and one moves (snaps), 
-                        // it might collide with a subsequent one?
-                        // "occupiedSlots" will handle the sequential exclusion.
-                        // So we don't strictly need to check distance against other selected pips 
-                        // IF we trust the grid system. 
-                        // But wait, if we are in "loose mode", we haven't snapped yet.
-                        // Let's ignore other selected pips for the *trigger*, 
-                        // but strictly respect them for the *resolution* (via occupiedSlots).
-                        continue;
-                    }
+                    if (selectedPips.has(other)) continue;
 
                     const r2 = other.getBoundingClientRect();
                     const cx2 = r2.left + r2.width / 2;
@@ -1218,36 +968,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                // If visual collision detected, OR if the grid slot itself is logically occupied 
-                // (which handles the case where we land "perfectly" on top of someone but didn't scan them yet? No, collision handles that).
-
-                // ALSO: Check collision against previously processed selected pips from this batch?
-                // If I drop 2 pips, and Pip A snaps to Slot X. Pip B was hovering over Slot X.
-                // Pip B needs to know Slot X is taken.
-                // `occupiedSlots` is our source of truth.
-
-                // If NO visual collision with static items, we might still overlap with *newly placed* items?
-                // Let's check `occupiedSlots` for the current position's grid slot too.
+                // Even without visual overlap, the landing slot may already
+                // be reserved by a pip placed earlier in this loop
                 const myGrid = getGridPos(currentLeft, currentTop);
                 if (occupiedSlots[`${myGrid.row}_${myGrid.col}`]) {
-                    collision = true; // Grid conflict
+                    collision = true;
                 }
 
                 if (collision) {
-                    // RESOLVE CONFLICT
-                    // Find nearest free slot
                     const target = findNearestFreeSlot(currentLeft, currentTop, occupiedSlots);
                     const pos = getScreenPos(target.row, target.col);
 
                     pip.style.left = pos.x + 'px';
                     pip.style.top = pos.y + 'px';
 
-                    // Mark this slot as taken for the next pip in loop
                     occupiedSlots[`${target.row}_${target.col}`] = true;
                 } else {
-                    // No collision. Leave it where it is.
-                    // BUT register it in occupiedSlots so others don't land on it.
-                    // We map its current loose position to the nearest grid slot for reservation purposes.
+                    // Leave it loose but reserve its nearest slot so later
+                    // pips in this loop don't land on it
                     occupiedSlots[`${myGrid.row}_${myGrid.col}`] = true;
                 }
             });
@@ -1281,37 +1019,14 @@ document.addEventListener('DOMContentLoaded', () => {
             centerY = sumY / selectedPips.size;
         }
 
-        // Map occupied slots by UNSELECTED pips
+        // One spiral search out from the center gathers as many free slots
+        // as the selection needs, skipping slots held by unselected pips
         const occupiedGrid = getOccupiedSlots(selectedPips);
-
-        // Find slots
         const targetSlots = [];
-
-        // We'll simulate finding N slots by running the search N times? 
-        // Or one search that gathers N slots?
-        // `findNearestFreeSlot` returns ONE.
-        // But we want a cluster around the center.
-        // It's efficient to just run a single BFS/Spiral that yields N slots.
-
         const centerGrid = getGridPos(centerX, centerY);
-        const searchStart = { x: centerX, y: centerY }; // Reuse logic if possible?
-
-        // Actually, the previous spiral implementation was efficient for finding K slots.
-        // Let's stick to the Spiral logic here but using the new `occupiedGrid` init.
 
         const queue = [{ row: centerGrid.row, col: centerGrid.col }];
         const visited = new Set([`${centerGrid.row}_${centerGrid.col}`]);
-
-        const directionsEven = [
-            { dRow: -1, dCol: -1 }, { dRow: -1, dCol: 0 },
-            { dRow: 0, dCol: -1 }, { dRow: 0, dCol: 1 },
-            { dRow: 1, dCol: -1 }, { dRow: 1, dCol: 0 }
-        ];
-        const directionsOdd = [
-            { dRow: -1, dCol: 0 }, { dRow: -1, dCol: 1 },
-            { dRow: 0, dCol: -1 }, { dRow: 0, dCol: 1 },
-            { dRow: 1, dCol: 0 }, { dRow: 1, dCol: 1 }
-        ];
 
         let qIndex = 0;
         while (targetSlots.length < selectedPips.size && qIndex < 3000) {
@@ -1324,7 +1039,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 occupiedGrid[key] = true;
             }
 
-            const dirs = (Math.abs(curr.row) % 2 === 0) ? directionsEven : directionsOdd;
+            const dirs = (Math.abs(curr.row) % 2 === 0) ? HEX_DIRS_EVEN : HEX_DIRS_ODD;
             for (let d of dirs) {
                 const nRow = curr.row + d.dRow;
                 const nCol = curr.col + d.dCol;
@@ -1363,7 +1078,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         historyStack.push(snapshot);
-        // Limit stack size? 
         if (historyStack.length > 50) historyStack.shift();
         updateSelectionUI(); // Update button state
     }
@@ -1372,19 +1086,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (historyStack.length === 0) return;
         isUndoing = true;
 
+        // Every interaction pushes the pre-change state right before
+        // changing anything, so popping restores it
         const prevState = historyStack.pop();
-        // If we just saved current state before a move, popping gives us "Before Move".
-        // If we are at "Before Move", popping gives "Before Previous Move".
-
-        // Logic check:
-        // 1. Init -> Save[0]
-        // 2. Drag Start -> Save[1] (copy of [0] effectively? No, strictly current state)
-        // 3. Drop -> modifies DOM.
-        // Undo -> Pop [1]. Apply [1]. 
-        // Result: DOM is back to before drag.
-
-        // If stack matches current DOM exactly (e.g. redundant save), pop again?
-        // Let's just apply it.
 
         prevState.forEach(item => {
             const pip = document.getElementById(item.id);
@@ -1406,41 +1110,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const counts = {
             rows: {},
             cols: {},
-            cells: {}, // New: Per-cell counts
+            cells: {},
             rowsSel: {},
             colsSel: {},
-            cellsSel: {}, // New
+            cellsSel: {},
             total: 0,
             totalSel: 0
         };
 
-        // Initialize (functional approach preferred over loop? simple loops are usually cleaner for init)
-        // But we handle initialization dynamically.
-
-        // Reset display
-        // We use innerHTML now because of the span
+        // Reset displayed totals (innerHTML because of the selection spans)
         const resetEl = el => el.innerHTML = '0%';
         document.querySelectorAll('.row-total').forEach(resetEl);
         document.querySelectorAll('.col-total').forEach(resetEl);
         document.getElementById('grand-total').innerHTML = '0%';
 
-        // Clear prob cells (except annual label)
-        // We need to preserve the cell-count div if we append it? 
-        // Or cleaner: Re-render the cell-count div every time.
-        // The Annual cell has "threshold-label" which is static.
-        // The Prob cells are usually empty.
-        // Let's clear TEXT inside prob cells but we might strip our new div?
-        // Actually, existing code did: `el.innerText = ''`.
-        // This WIPES everything.
-        // We will re-append the count div.
+        // Wipe the per-cell overlays (counts + steppers); they're
+        // re-rendered below. Setting innerText clears all children, which
+        // would eat the annual cell's static threshold-label, so that cell
+        // gets its overlays removed individually instead.
         document.querySelectorAll('.prob-cell').forEach(el => !el.classList.contains('annual-merged-cell') && (el.innerText = ''));
 
-        // Ensure Annual cell count is cleared? 
-        // We'll update it specifically or find the .cell-count inside it.
         const annualCell = document.querySelector('.annual-merged-cell');
         const existingAnnualCount = annualCell.querySelector('.cell-count');
         if (existingAnnualCount) existingAnnualCount.remove();
-
 
         const allPips = document.querySelectorAll('.hexagon');
 
@@ -1470,44 +1162,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // Update Metrics
             if (rowKey && colKey) {
-                // Update Row
                 counts.rows[rowKey] = (counts.rows[rowKey] || 0) + 1;
                 isSel && (counts.rowsSel[rowKey] = (counts.rowsSel[rowKey] || 0) + 1);
 
-                // Update Col
                 counts.cols[colKey] = (counts.cols[colKey] || 0) + 1;
                 isSel && (counts.colsSel[colKey] = (counts.colsSel[colKey] || 0) + 1);
 
-                // Update Cell
                 const cellKey = `${rowKey}_${colKey}`;
                 counts.cells[cellKey] = (counts.cells[cellKey] || 0) + 1;
                 isSel && (counts.cellsSel[cellKey] = (counts.cellsSel[cellKey] || 0) + 1);
 
-                // Update Total
                 counts.total++;
                 isSel && counts.totalSel++;
             }
         });
 
-        // Render helper
+        // Row/column totals: "20%" plus a red "(5%)" for the selected share
         const render = (val, selVal) => {
             return `${val || 0}%${(selVal > 0) ? ` <span style="color:#ff4444">(${selVal}%)</span>` : ''}`;
         };
 
-        // Render helper for Cell Counts (Subtle)
+        // Per-cell counts: same format, but empty cells show nothing to
+        // reduce clutter
         const renderCell = (val, selVal) => {
-            // If 0, show nothing? Or 0%?
-            // "very subtly... show the percentage".
-            // If 0, maybe hide it to reduce clutter? Default to showing nothing if 0.
             if (!val && !selVal) return '';
 
             const mainNum = val || 0;
             const selNum = selVal || 0;
-
-            // Format: "5%" or "5% (1%)"
-            // Color handled by CSS for main, span for selected.
 
             let html = `${mainNum}%`;
             if (selNum > 0) {
@@ -1516,13 +1198,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return html;
         };
 
-        // Render helper for Grand Total (Overloaded logic)
+        // Grand total: the parenthetical shows the selected share in red,
+        // or, when nothing is selected, the off-grid share in gray
         const renderGrand = (val, selVal) => {
             const outside = 100 - val;
             const showSelected = selVal > 0;
-            // If selected > 0, show that. Else show outside count (which is 0 if full grid).
             const num = showSelected ? selVal : outside;
-            // Red if selected, Gray if showing outside/empty
             const color = showSelected ? '#ff4444' : '#888';
             return `${val || 0}% <span style="color:${color}">(${num}%)</span>`;
         };
@@ -1538,10 +1219,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('grand-total').innerHTML = renderGrand(counts.total, selectedPips.size);
 
-        // Render per-cell counts
-        // 1. Regular cells
+        // Per-cell counts for the 20 regular cells
         document.querySelectorAll('.prob-cell').forEach(cell => {
-            // Skip Annual Merged Cell loop here, handled manually
             if (cell.classList.contains('annual-merged-cell')) return;
 
             const parentRow = cell.closest('tr');
@@ -1960,7 +1639,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnSquish) btnSquish.disabled = !hasSelection;
         if (btnSpread) btnSpread.disabled = !hasSelection;
         if (undoButton) undoButton.disabled = historyStack.length === 0;
-        // Visual style for disabled? CSS specific :disabled pseudo-class works.
         if (hasSelection) {
             selectionBox.style.borderColor = '#007bff';
             selectionBox.style.backgroundColor = 'rgba(0, 123, 255, 0.2)';
