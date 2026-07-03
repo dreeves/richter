@@ -64,6 +64,17 @@ test.describe('Presets', () => {
         await expect(page.locator('#grand-total')).toContainText('100%');
     });
 
+    test('Nate Silver preset matches the On the Edge chart totals', async ({ page }) => {
+        await page.selectOption('#preset-select', 'silver');
+
+        await expect(page.locator('#total-epochal')).toContainText('17%');
+        await expect(page.locator('#total-millenary')).toContainText('8%');
+        await expect(page.locator('#total-centennial')).toContainText('33%');
+        await expect(page.locator('#total-decennial')).toContainText('42%');
+        await expect(page.locator('#total-catastrophic')).toContainText('16%');
+        await expect(page.locator('#grand-total')).toContainText('100%');
+    });
+
     test('select shows the applied preset', async ({ page }) => {
         await page.selectOption('#preset-select', 'optimist');
         await expect(page.locator('#preset-select')).toHaveValue('optimist');

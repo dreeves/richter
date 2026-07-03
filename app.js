@@ -1757,8 +1757,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // Counts in BUCKET_ORDER order: rows bottom-up (annual, decennial,
     // centennial, millenary, epochal), columns in DOM order (positive,
     // good, ambiguous, bad, catastrophic). Each must sum to 100.
-    // These are archetypes, not attributed forecasts.
+    // These are archetypes, not attributed forecasts, except silver and dreev. NB: the counts are reversed top/bottom from what you see visually in the chart.
     const PRESETS = {
+        // Nate Silver's distribution from On the Edge, as reproduced in
+        // https://agifriday.substack.com/p/ai-risk-and-the-technological-richter
+        // (counted from the chart image; sums to exactly 100)
+        silver: [
+            0,  0, 0, 0, 0,
+            0, 13, 9, 3, 0,
+            8, 13, 8, 5, 1,
+            9,  9, 4, 4, 4,
+            5,  0, 0, 0, 5,
+        ],
+        dreev1: [
+             0,  0, 0, 0, 0,
+             0, 31, 4, 7, 0,
+            16,  8, 2, 3, 4,
+             2,  2, 1, 2, 1,
+             6,  0, 0, 0, 11,
+        ],
         uniform: [
             0, 0, 0, 0, 0,
             5, 5, 5, 5, 5,
