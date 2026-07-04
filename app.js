@@ -1600,10 +1600,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const helpBtn = document.getElementById('help-btn');
     const modal = document.getElementById('help-modal');
 
+    // Size the backdrop to the whole document and center the dialog in the
+    // visual viewport. Static CSS centering breaks on mobile: the page is
+    // wider than the screen and usually pinch-zoomed, where fixed
+    // positioning anchors to the layout viewport, not what's on screen.
+    function openHelpModal() {
+        const doc = document.documentElement;
+        modal.style.width = Math.max(doc.scrollWidth, window.innerWidth) + 'px';
+        modal.style.height = Math.max(doc.scrollHeight, window.innerHeight) + 'px';
+
+        const vv = window.visualViewport ||
+            { width: window.innerWidth, height: window.innerHeight, pageLeft: window.scrollX, pageTop: window.scrollY };
+        const content = modal.querySelector('.modal-content');
+        const width = Math.min(500, vv.width * 0.9);
+        content.style.width = width + 'px';
+        content.style.left = (vv.pageLeft + (vv.width - width) / 2) + 'px';
+        content.style.top = (vv.pageTop + vv.height * 0.15) + 'px';
+
+        modal.style.display = 'block';
+    }
+
     if (helpBtn && modal) {
-        helpBtn.addEventListener('click', () => {
-            modal.style.display = 'block';
-        });
+        helpBtn.addEventListener('click', openHelpModal);
     }
 
     // Action Button Listeners

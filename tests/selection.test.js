@@ -26,10 +26,13 @@ test.describe('Selection Box Interaction', () => {
     });
 
     test('should NOT start a selection box when dragging from empty space below the table', async ({ page }) => {
-        // Drag in the white space at the bottom
-        await page.mouse.move(400, 800);
+        // Drag in the white space at the bottom (computed from the table's
+        // actual bounds; a hardcoded y broke when row heights changed)
+        const table = await page.locator('table').boundingBox();
+        const y = table.y + table.height + 40;
+        await page.mouse.move(400, y);
         await page.mouse.down();
-        await page.mouse.move(600, 900);
+        await page.mouse.move(600, y + 80);
 
         const selectionBox = page.locator('#selection-box');
         await expect(selectionBox).not.toBeVisible();

@@ -53,13 +53,13 @@ body > h2 {
     padding: 0 240px;
 }
 
+/* The table paints per-cell (not as one slab) so the unused corners
+   disappear and the layout reads as a cross: header band, category rail,
+   data grid, totals rails */
 table {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 20px;
-    background-color: var(--surface);
-    border: 1px solid var(--hairline);
-    box-shadow: 0 1px 2px rgba(11, 11, 11, 0.04), 0 4px 16px rgba(11, 11, 11, 0.05);
     table-layout: fixed;
     /* helps with sizing */
 }
@@ -70,13 +70,19 @@ td {
     padding: 8px;
     text-align: center;
     vertical-align: middle;
+    background-color: var(--surface);
 }
 
 th {
-    background-color: var(--surface);
     font-size: 0.85em;
     font-weight: 600;
     color: var(--ink-2);
+}
+
+/* Unused corner cells: not drawn at all */
+.blank {
+    border: none;
+    background: transparent;
 }
 
 /* Diverging accent bar under each outcome-column header */
@@ -93,10 +99,32 @@ td.prob-cell[data-col="good"] { background-color: var(--wash-pos-1); }
 td.prob-cell[data-col="bad"] { background-color: var(--wash-neg-1); }
 td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
 
+/* Magnitude rail: big digit over a small-caps label */
 .category {
-    font-weight: bold;
-    background-color: var(--surface);
+    font-weight: 600;
+    font-size: 0.72em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+}
+
+.category font {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: normal;
     color: var(--ink-2);
+}
+
+/* Historical-examples rail: secondary to the pip grid */
+.data-row td:nth-of-type(2),
+.annual-row td:nth-of-type(2) {
+    font-size: 0.85em;
+    color: var(--ink-2);
+}
+
+/* Acts as a min-height: room for pips even in sparse-text rows */
+.data-row td {
+    height: 88px;
 }
 
 .subtitle {
@@ -114,9 +142,13 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
 
 /* Annual Row Styling */
 .annual-row {
-    background-color: var(--wash-neutral);
     color: var(--ink-2);
     vertical-align: top;
+}
+
+/* On the tds, not the tr, since cells paint their own background now */
+.annual-row td {
+    background-color: var(--wash-neutral);
 }
 
 .annual-row .annual-merged-cell {
@@ -345,12 +377,6 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
         min-height: 40px;
     }
 
-    /* Ensure modal still fits */
-    .modal-content {
-        width: 90%;
-        margin: 20% auto;
-    }
-
     /* Bigger stepper touch targets, always fully visible (no hover on touch) */
     .stepper-btn {
         width: 24px;
@@ -369,28 +395,30 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
 }
 
 /* Modal Styling */
+/* The backdrop is document-anchored (not fixed): this page is wider than
+   a phone screen and usually pinch-zoomed there, where fixed positioning
+   anchors to the layout viewport and lands half off-screen. JS sizes the
+   backdrop to the document and centers the dialog in the visual viewport
+   when it opens. */
 .modal {
     display: none;
     /* Hidden by default */
-    position: fixed;
+    position: absolute;
     z-index: 2000;
     /* On top of everything */
     left: 0;
     top: 0;
-    width: 100%;
-    height: 100%;
     overflow: auto;
     background-color: rgba(11, 11, 11, 0.45);
 }
 
 .modal-content {
+    position: absolute;
+    /* left/top/width set by JS on open */
+    box-sizing: border-box;
     background-color: var(--surface);
-    margin: 15% auto;
-    /* 15% from top and centered */
     padding: 20px 30px;
     border: 1px solid var(--hairline);
-    width: 80%;
-    max-width: 500px;
     border-radius: 10px;
     box-shadow: 0 8px 32px rgba(11, 11, 11, 0.18);
     line-height: 1.6;
