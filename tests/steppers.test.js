@@ -60,6 +60,48 @@ test.describe('Cell Steppers', () => {
         await expect(page.locator('#grand-total')).toContainText('100%');
     });
 
+    test('pack and spread tidy a cell without changing any probabilities', async ({ page }) => {
+        const cell = page.locator('tr[data-row="epochal"] td[data-col="positive"]');
+
+        await cell.locator('.stepper-btn[data-act="pack"]').click();
+        await expect(cell.locator('.cell-count')).toContainText('5%');
+        await expect(page.locator('#grand-total')).toContainText('100%');
+
+        await cell.locator('.stepper-btn[data-act="spread"]').click();
+        await expect(cell.locator('.cell-count')).toContainText('5%');
+        await expect(page.locator('#grand-total')).toContainText('100%');
+    });
+
+    test('row-total pack tidies the whole row, probabilities unchanged', async ({ page }) => {
+        // dispatchEvent: totals column sits right of the mobile emulator fold
+        await page.locator('#total-epochal .stepper-btn[data-act="pack"]').dispatchEvent('click');
+
+        await expect(page.locator('#total-epochal')).toContainText('25%');
+        await expect(page.locator('#grand-total')).toContainText('100%');
+    });
+
+    test('pack and spread are disabled on an empty cell', async ({ page }) => {
+        const stepper = page.locator('.annual-merged-cell');
+        await expect(stepper.locator('.stepper-btn[data-act="pack"]')).toBeDisabled();
+        await expect(stepper.locator('.stepper-btn[data-act="spread"]')).toBeDisabled();
+    });
+
+    test('redo reapplies an undone stepper move', async ({ page }) => {
+        const cell = page.locator('tr[data-row="epochal"] td[data-col="positive"]');
+        await cell.locator('.stepper-btn[data-delta="1"]').click();
+        await expect(cell.locator('.cell-count')).toContainText('6%');
+
+        await page.locator('button[title="Undo"]').dispatchEvent('click');
+        await expect(cell.locator('.cell-count')).toContainText('5%');
+
+        await page.locator('button[title="Redo"]').dispatchEvent('click');
+        await expect(cell.locator('.cell-count')).toContainText('6%');
+
+        // A fresh action kills the redo branch
+        await cell.locator('.stepper-btn[data-delta="-1"]').click();
+        await expect(page.locator('button[title="Redo"]')).toBeDisabled();
+    });
+
     test('undo reverses a stepper move', async ({ page }) => {
         const cell = page.locator('tr[data-row="epochal"] td[data-col="positive"]');
         await cell.locator('.stepper-btn[data-delta="1"]').click();

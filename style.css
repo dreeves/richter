@@ -380,15 +380,12 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
         font-size: 16px;
     }
 
-    /* Bigger stepper touch targets, always fully visible (no hover on touch) */
+    /* 20px is the biggest that fits four buttons across a mobile cell
+       (visibility on touch devices comes from the hover:none rule) */
     .stepper-btn {
-        width: 24px;
-        height: 24px;
-        font-size: 14px;
-    }
-
-    .cell-stepper {
-        opacity: 1;
+        width: 20px;
+        height: 20px;
+        font-size: 12px;
     }
 
     .row-total,
@@ -466,21 +463,32 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
     font-weight: normal;
 }
 
-/* Cell Steppers (+/− controls) */
+/* Cell Steppers (−/+/⊕/⊞ controls): hidden until the cell is hovered so
+   the grid stays clean at rest */
 .cell-stepper {
     position: absolute;
     bottom: 2px;
     left: 3px;
     display: flex;
     gap: 2px;
-    opacity: 0.35;
+    opacity: 0;
+    transition: opacity 0.12s ease;
     z-index: 400;
     /* Above pips (300 container) so buttons stay clickable */
 }
 
 .prob-cell:hover .cell-stepper,
-.annual-merged-cell:hover .cell-stepper {
+.annual-merged-cell:hover .cell-stepper,
+.row-total:hover .cell-stepper,
+.col-total:hover .cell-stepper {
     opacity: 1;
+}
+
+/* No hover on touch devices, so keep the controls visible there */
+@media (hover: none) {
+    .cell-stepper {
+        opacity: 0.7;
+    }
 }
 
 /* Steppers would steal clicks from the selection box's handles (they are
@@ -489,27 +497,28 @@ body.box-active .cell-stepper {
     display: none;
 }
 
+/* Ghost buttons: bare glyphs, with a chip appearing only under the cursor */
 .stepper-btn {
     width: 18px;
     height: 18px;
     padding: 0;
     font-size: 12px;
     line-height: 1;
-    background: var(--surface);
-    border: 1px solid var(--baseline);
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 4px;
     color: var(--ink-2);
     cursor: pointer;
 }
 
 .stepper-btn:hover:not(:disabled) {
-    background: var(--wash-neutral);
+    background: var(--surface);
     border-color: var(--ink-muted);
+    color: var(--ink);
 }
 
 .stepper-btn:disabled {
     color: var(--baseline);
-    border-color: var(--hairline);
     cursor: default;
 }
 

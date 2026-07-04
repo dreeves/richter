@@ -44,8 +44,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // order, built during init below
     let BUCKET_ORDER = [];
 
-    // Undo stack: snapshots of every pip's position
+    // Undo/redo stacks: snapshots of every pip's position
     const historyStack = [];
+    const redoStack = [];
     let isUndoing = false;
 
     // Helper: Normalize Pointer Events (returns page coordinates)
@@ -102,9 +103,13 @@ document.addEventListener('DOMContentLoaded', () => {
     undoButton.addEventListener('click', undo);
     undoContainer.appendChild(undoButton);
 
-    // Action Buttons
-    const btnSquish = document.getElementById('btn-squish');
-    const btnSpread = document.getElementById('btn-spread');
+    const redoButton = document.createElement('button');
+    redoButton.className = 'icon-btn';
+    redoButton.innerText = '↪';
+    redoButton.title = 'Redo';
+    redoButton.disabled = true;
+    redoButton.addEventListener('click', redo);
+    undoContainer.appendChild(redoButton);
 
     // State for Box Selection
     let isBoxSelecting = false;
@@ -611,51 +616,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSelectionUI(); // button state
     }
 
-    function applySquish() {
-        if (selectedPips.size === 0) return;
-        saveHistory();
-        packSelection();
-        updateUrlState();
-        // Box stays visible - user can click Squish/Spread again
-    }
-
-    function applySpread() {
-        if (selectedPips.size === 0 || !lastSelectionBounds) return;
-        saveHistory();
-
-        const pipsInBox = Array.from(selectedPips);
-        const { left, top, width, height } = lastSelectionBounds;
-        const aspect = width / height;
-
-        let cols = Math.ceil(Math.sqrt(pipsInBox.length * aspect));
-        if (cols < 1) cols = 1;
-        let rows = Math.ceil(pipsInBox.length / cols);
-        while (rows * cols < pipsInBox.length) cols++;
-
-        const cellW = width / cols;
-        const cellH = height / rows;
-
-        // Sort by CURRENT position roughly to keep stability
-        pipsInBox.sort((a, b) => {
-            const rtA = parseFloat(a.style.top);
-            const rtB = parseFloat(b.style.top);
-            if (Math.abs(rtA - rtB) > PIP_RADIUS) return rtA - rtB;
-            return parseFloat(a.style.left) - parseFloat(b.style.left);
-        });
-
-        pipsInBox.forEach((pip, i) => {
-            const r = Math.floor(i / cols);
-            const c = i % cols;
-            const x = left + c * cellW + cellW / 2 - PIP_RADIUS;
-            const y = top + r * cellH + cellH / 2 - PIP_RADIUS;
-            pip.style.left = x + 'px';
-            pip.style.top = y + 'px';
-        });
-
-        updateUrlState();
-        // Box stays visible - user can click Squish/Spread again
-    }
-
     document.addEventListener('mouseup', handleBoxEnd);
     document.addEventListener('touchend', handleBoxEnd);
 
@@ -1066,41 +1026,54 @@ document.addEventListener('DOMContentLoaded', () => {
         updateUrlState(); // Save to URL on pack
     }
 
-    function saveHistory() {
-        if (isUndoing) return;
+    function snapshotPips() {
         const snapshot = [];
-        const allPips = document.querySelectorAll('.hexagon');
-        allPips.forEach(pip => {
+        document.querySelectorAll('.hexagon').forEach(pip => {
             snapshot.push({
                 id: pip.id,
                 left: pip.style.left,
                 top: pip.style.top
             });
         });
-        historyStack.push(snapshot);
-        if (historyStack.length > 50) historyStack.shift();
-        updateSelectionUI(); // Update button state
+        return snapshot;
     }
 
-    function undo() {
-        if (historyStack.length === 0) return;
-        isUndoing = true;
-
-        // Every interaction pushes the pre-change state right before
-        // changing anything, so popping restores it
-        const prevState = historyStack.pop();
-
-        prevState.forEach(item => {
+    function applyPipState(state) {
+        state.forEach(item => {
             const pip = document.getElementById(item.id);
             if (pip) {
                 pip.style.left = item.left;
                 pip.style.top = item.top;
             }
         });
-
         updateCounters();
-        updateUrlState(); // Save to URL on undo
+        updateUrlState();
+        updateSelectionUI();
+    }
+
+    function saveHistory() {
+        if (isUndoing) return;
+        historyStack.push(snapshotPips());
+        if (historyStack.length > 50) historyStack.shift();
+        redoStack.length = 0; // A new action forks history; redo dies
         updateSelectionUI(); // Update button state
+    }
+
+    // Every interaction pushes the pre-change state right before changing
+    // anything, so undo pops it back and stashes the current state for redo
+    function undo() {
+        if (historyStack.length === 0) return;
+        isUndoing = true;
+        redoStack.push(snapshotPips());
+        applyPipState(historyStack.pop());
+        isUndoing = false;
+    }
+
+    function redo() {
+        if (redoStack.length === 0) return;
+        isUndoing = true;
+        historyStack.push(snapshotPips());
+        applyPipState(redoStack.pop());
         isUndoing = false;
     }
 
@@ -1260,16 +1233,21 @@ document.addEventListener('DOMContentLoaded', () => {
         // Re-rendered on every update so the disabled states stay correct.
         // (The prob cells were wiped above; the annual cell needs explicit removal.)
         const renderStepper = (rKey, cKey, count) => {
-            const minusDisabled = count === 0;
+            const emptyDisabled = count === 0 ? ' disabled' : '';
             // No pips anywhere else to pull from
-            const plusDisabled = counts.total - count === 0;
+            const plusDisabled = counts.total - count === 0 ? ' disabled' : '';
+            const at = `data-r="${rKey}" data-c="${cKey}"`;
             const div = document.createElement('div');
             div.className = 'cell-stepper';
             div.innerHTML =
-                `<button class="stepper-btn" data-r="${rKey}" data-c="${cKey}" data-delta="-1"` +
-                ` title="Move 1% to the biggest pile"${minusDisabled ? ' disabled' : ''}>&minus;</button>` +
-                `<button class="stepper-btn" data-r="${rKey}" data-c="${cKey}" data-delta="1"` +
-                ` title="Move 1% here from the biggest pile"${plusDisabled ? ' disabled' : ''}>+</button>`;
+                `<button class="stepper-btn" ${at} data-delta="-1"` +
+                ` title="Move 1% to the biggest pile"${emptyDisabled}>&minus;</button>` +
+                `<button class="stepper-btn" ${at} data-delta="1"` +
+                ` title="Move 1% here from the biggest pile"${plusDisabled}>+</button>` +
+                `<button class="stepper-btn" ${at} data-act="pack"` +
+                ` title="Gather these pips"${emptyDisabled}>⊕</button>` +
+                `<button class="stepper-btn" ${at} data-act="spread"` +
+                ` title="Spread these pips out"${emptyDisabled}>⊞</button>`;
             return div;
         };
 
@@ -1437,12 +1415,116 @@ document.addEventListener('DOMContentLoaded', () => {
         updateUrlState();
     }
 
+    // Gather (pack) or spread out a target's pips, bucket by bucket, so no
+    // pip ever changes buckets: probabilities are invariant under tidying.
+    function tidyCell(rowKey, colKey, act) {
+        const buckets = getPipsByBucket().filter(b =>
+            (rowKey === '*' || b.r === rowKey) &&
+            (colKey === '*' || b.c === colKey) &&
+            b.pips.length > 0);
+        if (buckets.length === 0) return;
+
+        saveHistory();
+        buckets.forEach(b => {
+            const rect = getTargetRect(b.r, b.c);
+            if (act === 'pack') packBucket(b, rect);
+            else spreadBucket(b, rect);
+        });
+        updateCounters();
+        updateUrlState();
+    }
+
+    // Honeycomb the bucket's pips around its rect's center, using only
+    // hex-grid slots that keep a pip fully inside the rect
+    function packBucket(bucket, rect) {
+        const occupied = getOccupiedSlots(new Set(bucket.pips));
+        const centerGrid = getGridPos(rect.left + rect.width / 2 - PIP_RADIUS,
+            rect.top + rect.height / 2 - PIP_RADIUS);
+
+        const inRect = (row, col) => {
+            const pos = getScreenPos(row, col);
+            return pos.x >= rect.left && pos.x + PIP_SIZE <= rect.left + rect.width &&
+                pos.y >= rect.top && pos.y + PIP_SIZE <= rect.top + rect.height;
+        };
+
+        const slots = [];
+        const queue = [{ row: centerGrid.row, col: centerGrid.col }];
+        const visited = new Set([`${centerGrid.row}_${centerGrid.col}`]);
+        let qIndex = 0;
+        while (slots.length < bucket.pips.length && qIndex < 3000 && qIndex < queue.length) {
+            const curr = queue[qIndex++];
+            const key = `${curr.row}_${curr.col}`;
+            if (inRect(curr.row, curr.col) && !occupied[key]) {
+                slots.push(curr);
+                occupied[key] = true;
+            }
+            const dirs = (Math.abs(curr.row) % 2 === 0) ? HEX_DIRS_EVEN : HEX_DIRS_ODD;
+            for (let d of dirs) {
+                const nRow = curr.row + d.dRow;
+                const nCol = curr.col + d.dCol;
+                const nKey = `${nRow}_${nCol}`;
+                // Only walk within the rect so the spiral can't escape it
+                if (!visited.has(nKey) && inRect(nRow, nCol)) {
+                    visited.add(nKey);
+                    queue.push({ row: nRow, col: nCol });
+                }
+            }
+        }
+
+        bucket.pips.forEach((pip, i) => {
+            if (i < slots.length) {
+                const pos = getScreenPos(slots[i].row, slots[i].col);
+                pip.style.left = pos.x + 'px';
+                pip.style.top = pos.y + 'px';
+            } else {
+                // Cell too crowded for a clean honeycomb; accept overlap
+                const spot = findFreeSpotInRect(rect);
+                pip.style.left = spot.x + 'px';
+                pip.style.top = spot.y + 'px';
+            }
+        });
+    }
+
+    // Spread the bucket's pips in an even grid across its rect
+    function spreadBucket(bucket, rect) {
+        const pips = bucket.pips.slice();
+        const n = pips.length;
+        const aspect = rect.width / rect.height;
+
+        let cols = Math.ceil(Math.sqrt(n * aspect));
+        if (cols < 1) cols = 1;
+        let rows = Math.ceil(n / cols);
+        while (rows * cols < n) cols++;
+
+        const cellW = rect.width / cols;
+        const cellH = rect.height / rows;
+
+        // Sort by current position so the motion reads as an untangling
+        pips.sort((a, b) => {
+            const ta = parseFloat(a.style.top);
+            const tb = parseFloat(b.style.top);
+            if (Math.abs(ta - tb) > PIP_RADIUS) return ta - tb;
+            return parseFloat(a.style.left) - parseFloat(b.style.left);
+        });
+
+        pips.forEach((pip, i) => {
+            const r = Math.floor(i / cols);
+            const c = i % cols;
+            pip.style.left = (rect.left + c * cellW + cellW / 2 - PIP_RADIUS) + 'px';
+            pip.style.top = (rect.top + r * cellH + cellH / 2 - PIP_RADIUS) + 'px';
+        });
+    }
+
     // Event delegation because the stepper buttons are re-created on every
     // updateCounters call.
     document.querySelector('table').addEventListener('click', (e) => {
         const btn = e.target.closest('.stepper-btn');
         if (!btn) return;
-        stepCell(btn.dataset.r, btn.dataset.c, parseInt(btn.dataset.delta, 10));
+        if (btn.dataset.delta) {
+            stepCell(btn.dataset.r, btn.dataset.c, parseInt(btn.dataset.delta, 10));
+        } else {
+            tidyCell(btn.dataset.r, btn.dataset.c, btn.dataset.act);
+        }
     });
 
     // --- Presets ---
@@ -1563,8 +1645,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     width: rect.width,
                     height: rect.height,
                     ignoreElements: (element) => {
-                        // Still ignore the undo container inside the body render just in case
-                        if (element.id === 'undo-container') return true;
+                        // Only absolutely positioned overlays may be ignored:
+                        // removing an in-flow element (like the toolbar)
+                        // collapses layout in html2canvas's clone and shifts
+                        // everything relative to the crop coordinates
                         if (element.classList.contains('selection-box')) return true;
                         if (element.classList.contains('cell-stepper')) return true;
                         return false;
@@ -1624,18 +1708,6 @@ document.addEventListener('DOMContentLoaded', () => {
         helpBtn.addEventListener('click', openHelpModal);
     }
 
-    // Action Button Listeners
-    if (btnSquish && btnSpread) {
-        btnSquish.addEventListener('click', (e) => {
-            e.stopPropagation();
-            applySquish();
-        });
-        btnSpread.addEventListener('click', (e) => {
-            e.stopPropagation();
-            applySpread();
-        });
-    }
-
     // Help Modal & Close Logic
     const closeBtn = document.querySelector('.close-btn');
     if (closeBtn) {
@@ -1667,9 +1739,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Helper to update button state
     function updateSelectionUI() {
         const hasSelection = selectedPips.size > 0;
-        if (btnSquish) btnSquish.disabled = !hasSelection;
-        if (btnSpread) btnSpread.disabled = !hasSelection;
         if (undoButton) undoButton.disabled = historyStack.length === 0;
+        if (redoButton) redoButton.disabled = redoStack.length === 0;
         if (hasSelection) {
             selectionBox.style.borderColor = '#2a78d6';
             selectionBox.style.backgroundColor = 'rgba(42, 120, 214, 0.2)';
