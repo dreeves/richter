@@ -32,9 +32,31 @@ test.describe('Cell Steppers', () => {
     });
 
     test('plus on the annual merged cell adds 1% to the annual row', async ({ page }) => {
-        await page.locator('.annual-merged-cell .stepper-btn[data-delta="1"]').click();
+        // dispatchEvent instead of click: the annual row sits below the
+        // mobile-emulation fold, and the mobile CSS's overflow-y:hidden
+        // blocks the emulator from scrolling to it (real mobile browsers
+        // ignore body overflow locks for user scrolling)
+        await page.locator('.annual-merged-cell .stepper-btn[data-delta="1"]').dispatchEvent('click');
 
         await expect(page.locator('#total-annual')).toContainText('1%');
+        await expect(page.locator('#grand-total')).toContainText('100%');
+    });
+
+    test('row-total stepper moves 1% into the row', async ({ page }) => {
+        // dispatchEvent: the totals column sits right of the mobile
+        // emulator's visual viewport, which it can't reliably scroll to
+        await page.locator('#total-epochal .stepper-btn[data-delta="1"]').dispatchEvent('click');
+
+        await expect(page.locator('#total-epochal')).toContainText('26%');
+        await expect(page.locator('#grand-total')).toContainText('100%');
+    });
+
+    test('column-total stepper moves 1% out of the column', async ({ page }) => {
+        // dispatchEvent: the totals row sits below the mobile emulator's
+        // fold (see the annual-cell test above)
+        await page.locator('#total-catastrophic .stepper-btn[data-delta="-1"]').dispatchEvent('click');
+
+        await expect(page.locator('#total-catastrophic')).toContainText('19%');
         await expect(page.locator('#grand-total')).toContainText('100%');
     });
 

@@ -1180,7 +1180,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Row/column totals: "20%" plus a red "(5%)" for the selected share
         const render = (val, selVal) => {
-            return `${val || 0}%${(selVal > 0) ? ` <span style="color:#ff4444">(${selVal}%)</span>` : ''}`;
+            return `${val || 0}%${(selVal > 0) ? ` <span style="color:#d03b3b">(${selVal}%)</span>` : ''}`;
         };
 
         // Per-cell counts: same format, but empty cells show nothing to
@@ -1193,7 +1193,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let html = `${mainNum}%`;
             if (selNum > 0) {
-                html += ` <span style="color:#ff4444">(${selNum}%)</span>`;
+                html += ` <span style="color:#d03b3b">(${selNum}%)</span>`;
             }
             return html;
         };
@@ -1204,7 +1204,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const outside = 100 - val;
             const showSelected = selVal > 0;
             const num = showSelected ? selVal : outside;
-            const color = showSelected ? '#ff4444' : '#888';
+            const color = showSelected ? '#d03b3b' : '#898781';
             return `${val || 0}% <span style="color:${color}">(${num}%)</span>`;
         };
 
@@ -1289,12 +1289,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (existingAnnualStepper) existingAnnualStepper.remove();
         // The annual cell spans all 5 columns; '*' means the whole row.
         annualCell.appendChild(renderStepper('annual', '*', counts.rows['annual'] || 0));
+
+        // Row and column totals get steppers too, targeting the whole row
+        // or column. (Not the grand total: it's pinned at 100%.)
+        cachedRowBounds.forEach(r => {
+            const el = document.getElementById(`total-${r.key}`);
+            el && el.appendChild(renderStepper(r.key, '*', counts.rows[r.key] || 0));
+        });
+        cachedColBounds.forEach(c => {
+            const el = document.getElementById(`total-${c.key}`);
+            el && el.appendChild(renderStepper('*', c.key, counts.cols[c.key] || 0));
+        });
     }
 
-    // --- Cell Steppers ---
-    // Move one pip (1%) into or out of a bucket without dragging.
-    // The counterpart bucket is always the fullest bucket outside the target,
-    // so + takes from the biggest pile and − returns to the biggest pile.
+    // --- Steppers ---
+    // Move one pip (1%) into or out of a target without dragging. A target
+    // is a cell, a whole row (colKey '*'), or a whole column (rowKey '*').
+    // The counterpart is always the fullest bucket outside the target, so
+    // + takes from the biggest outside pile and − sends back to it; within
+    // the target, + grows its fullest bucket and − shrinks its fullest.
 
     function getPipsByBucket() {
         updateGridBounds();
@@ -1325,30 +1338,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return buckets;
     }
 
-    // Page-coordinate rect of a bucket. colKey '*' means the whole annual
-    // row (the merged cell).
-    function getBucketRect(rowKey, colKey) {
-        if (colKey === '*') {
-            const cell = document.querySelector('.annual-merged-cell');
-            const rect = cell.getBoundingClientRect();
-            return {
-                left: rect.left + window.scrollX,
-                top: rect.top + window.scrollY,
-                width: rect.width,
-                height: rect.height
-            };
-        }
-
-        const rowTr = document.querySelector(`tr[data-row="${rowKey}"]`) || document.querySelector('tr.annual-row');
-        const rowRect = rowTr.getBoundingClientRect();
-        const colTh = document.querySelector(`th[data-col="${colKey}"]`);
-        const colRect = colTh.getBoundingClientRect();
-        return {
-            left: colRect.left + window.scrollX,
-            top: rowRect.top + window.scrollY,
-            width: colRect.width,
-            height: rowRect.height
-        };
+    // Page-coordinate rect of a target, as the union of its row and column
+    // bands ('*' spans them all). Assumes updateGridBounds has run, which
+    // getPipsByBucket guarantees.
+    function getTargetRect(rowKey, colKey) {
+        const rows = cachedRowBounds.filter(r => rowKey === '*' || r.key === rowKey);
+        const cols = cachedColBounds.filter(c => colKey === '*' || c.key === colKey);
+        const top = Math.min(...rows.map(r => r.top));
+        const bottom = Math.max(...rows.map(r => r.bottom));
+        const left = Math.min(...cols.map(c => c.left));
+        const right = Math.max(...cols.map(c => c.right));
+        return { left, top, width: right - left, height: bottom - top };
     }
 
     // Random collision-free spot in a rect; after max attempts we accept
@@ -1390,31 +1390,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function stepCell(rowKey, colKey, delta) {
         const buckets = getPipsByBucket();
-        const inTarget = b => b.r === rowKey && (colKey === '*' || b.c === colKey);
+        const inTarget = b => (rowKey === '*' || b.r === rowKey) &&
+                              (colKey === '*' || b.c === colKey);
 
-        // Fullest bucket outside the target = the pile we trade with.
-        // Ties go to the first in BUCKET_ORDER.
-        let pile = null;
-        buckets.forEach(b => {
-            if (inTarget(b)) return;
-            if (b.pips.length === 0) return;
-            if (!pile || b.pips.length > pile.pips.length) pile = b;
-        });
+        // Fullest bucket satisfying pred; ties go to the first in
+        // BUCKET_ORDER. Returns null if all candidates are empty.
+        const fullest = pred => {
+            let best = null;
+            buckets.forEach(b => {
+                if (!pred(b)) return;
+                if (b.pips.length === 0) return;
+                if (!best || b.pips.length > best.pips.length) best = b;
+            });
+            return best;
+        };
+
+        // The pile we trade with
+        const pile = fullest(b => !inTarget(b));
 
         if (delta > 0) {
-            if (!pile) return; // Every on-grid pip is already in this cell
-            const dest = findFreeSpotInRect(getBucketRect(rowKey, colKey));
+            if (!pile) return; // Every on-grid pip is already in the target
+            // Land in the target's fullest bucket, or anywhere in the
+            // target if it's empty
+            const destBucket = fullest(inTarget);
+            const rect = destBucket
+                ? getTargetRect(destBucket.r, destBucket.c)
+                : getTargetRect(rowKey, colKey);
+            const dest = findFreeSpotInRect(rect);
             const pip = nearestPip(pile.pips, dest.x, dest.y);
             saveHistory();
             // Pips have a CSS left/top transition, so this animates the flight
             pip.style.left = dest.x + 'px';
             pip.style.top = dest.y + 'px';
         } else {
-            const targetPips = buckets.filter(inTarget).flatMap(b => b.pips);
-            if (targetPips.length === 0) return; // Nothing to remove
+            const sourceBucket = fullest(inTarget);
+            if (!sourceBucket) return; // Nothing to remove
             if (!pile) return; // Nowhere to send it (all mass is here)
-            const dest = findFreeSpotInRect(getBucketRect(pile.r, pile.c));
-            const pip = nearestPip(targetPips, dest.x, dest.y);
+            const dest = findFreeSpotInRect(getTargetRect(pile.r, pile.c));
+            const pip = nearestPip(sourceBucket.pips, dest.x, dest.y);
             saveHistory();
             pip.style.left = dest.x + 'px';
             pip.style.top = dest.y + 'px';
@@ -1543,7 +1556,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rect = table.getBoundingClientRect();
 
                 const canvas = await html2canvas(document.body, {
-                    backgroundColor: '#f4f4f4', // Match body bg
+                    backgroundColor: '#f9f9f7', // Match body bg
                     // Crop to table area
                     x: rect.left + window.scrollX,
                     y: rect.top + window.scrollY,
@@ -1640,8 +1653,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnSpread) btnSpread.disabled = !hasSelection;
         if (undoButton) undoButton.disabled = historyStack.length === 0;
         if (hasSelection) {
-            selectionBox.style.borderColor = '#007bff';
-            selectionBox.style.backgroundColor = 'rgba(0, 123, 255, 0.2)';
+            selectionBox.style.borderColor = '#2a78d6';
+            selectionBox.style.backgroundColor = 'rgba(42, 120, 214, 0.2)';
         }
     }
 });

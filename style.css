@@ -1,7 +1,38 @@
+/* Design tokens. The outcome columns are a diverging scale: blue arm for
+   good outcomes, red arm for bad, neutral midpoint at Ambiguous. Arm hues
+   validated against the light surface (dataviz six-checks). */
+:root {
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-muted: #898781;
+    --hairline: #e1e0d9;
+    --baseline: #c3c2b7;
+
+    /* Diverging accents, pole to midpoint */
+    --accent-pos-2: #2a78d6;
+    --accent-pos-1: #6da7ec;
+    --accent-neg-1: #ee8f85;
+    --accent-neg-2: #e34948;
+
+    /* Cell washes: same arms at near-surface strength */
+    --wash-pos-2: #eaf2fc;
+    --wash-pos-1: #f4f8fe;
+    --wash-neg-1: #fdf6f4;
+    --wash-neg-2: #fbedeb;
+    --wash-neutral: #f6f6f3;
+
+    /* Selection colors (mirrored in app.js) */
+    --select-red: #d03b3b;
+    --select-blue: #2a78d6;
+}
+
 body {
-    font-family: Arial, sans-serif;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     margin: 20px;
-    background-color: #f4f4f4;
+    background-color: var(--page);
+    color: var(--ink);
     user-select: none;
     -webkit-user-select: none;
     /* Safari */
@@ -11,44 +42,80 @@ body {
 
 h2 {
     text-align: center;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+}
+
+/* Page title only (not the modal's h2): keep clear of the absolutely
+   positioned button cluster in the top right */
+body > h2 {
+    padding: 0 240px;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 20px;
-    background-color: white;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    background-color: var(--surface);
+    border: 1px solid var(--hairline);
+    box-shadow: 0 1px 2px rgba(11, 11, 11, 0.04), 0 4px 16px rgba(11, 11, 11, 0.05);
     table-layout: fixed;
     /* helps with sizing */
 }
 
 th,
 td {
-    border: 1px solid #ddd;
+    border: 1px solid var(--hairline);
     padding: 8px;
     text-align: center;
     vertical-align: middle;
 }
 
 th {
-    background-color: #eee;
+    background-color: var(--surface);
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--ink-2);
 }
+
+/* Diverging accent bar under each outcome-column header */
+th[data-col="positive"] { box-shadow: inset 0 -3px 0 var(--accent-pos-2); }
+th[data-col="good"] { box-shadow: inset 0 -3px 0 var(--accent-pos-1); }
+th[data-col="ambiguous"] { box-shadow: inset 0 -3px 0 var(--baseline); }
+th[data-col="bad"] { box-shadow: inset 0 -3px 0 var(--accent-neg-1); }
+th[data-col="catastrophic"] { box-shadow: inset 0 -3px 0 var(--accent-neg-2); }
+
+/* Near-surface washes on the outcome cells; Ambiguous stays on the surface
+   (a diverging midpoint reads as "nothing") */
+td.prob-cell[data-col="positive"] { background-color: var(--wash-pos-2); }
+td.prob-cell[data-col="good"] { background-color: var(--wash-pos-1); }
+td.prob-cell[data-col="bad"] { background-color: var(--wash-neg-1); }
+td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
 
 .category {
     font-weight: bold;
-    background-color: #f9f9f9;
+    background-color: var(--surface);
+    color: var(--ink-2);
 }
 
 .subtitle {
-    background-color: #e0e0e0;
+    background-color: var(--wash-neutral);
+    font-size: 0.85em;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+}
+
+.subtitle em {
+    font-style: normal;
+    /* Uppercase + letter-spacing carries the emphasis instead */
 }
 
 /* Annual Row Styling */
 .annual-row {
-    background-color: #f9f9f9;
-    /* Subtle gray */
-    color: #555;
+    background-color: var(--wash-neutral);
+    color: var(--ink-2);
     vertical-align: top;
 }
 
@@ -61,7 +128,7 @@ th {
 
 .threshold-label {
     display: inline-block;
-    color: #888;
+    color: var(--ink-muted);
     font-size: 0.9em;
     pointer-events: none;
     /* Click through */
@@ -72,8 +139,7 @@ th {
     margin-top: 40px;
     margin-bottom: 20px;
     font-size: 0.85em;
-    color: #777;
-    /* font-style: italic; */
+    color: var(--ink-muted);
 }
 
 /* Undo Button Style */
@@ -85,39 +151,30 @@ th {
 
 /* Unified Icon Button Style */
 .icon-btn {
-    background: #fff;
-    border: 1px solid #ccc;
-    color: #333;
+    background: var(--surface);
+    border: 1px solid var(--baseline);
+    color: var(--ink-2);
     cursor: pointer;
-    font-size: 18px;
+    font-size: 16px;
     padding: 6px 10px;
-    border-radius: 4px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(11, 11, 11, 0.06);
     vertical-align: middle;
     margin: 0 2px;
-    transition: all 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .icon-btn:hover:not(:disabled) {
-    background: #f0f0f0;
-    border-color: #999;
+    background: var(--wash-neutral);
+    border-color: var(--ink-muted);
 }
 
 .icon-btn:disabled {
-    color: #bbb;
-    border-color: #ddd;
+    color: var(--baseline);
+    border-color: var(--hairline);
     cursor: default;
-    background: #f9f9f9;
+    background: var(--page);
     box-shadow: none;
-}
-
-
-
-/* Header Selection Cell */
-#selection-cell {
-    font-weight: normal;
-    color: #666;
-    font-size: 0.9em;
 }
 
 #hexagon-container {
@@ -156,10 +213,9 @@ th {
     cursor: grabbing;
 }
 
-
 .hexagon.selected svg polygon {
-    fill: #ff4444;
-    /* Highlight color */
+    fill: #d03b3b;
+    /* Selection highlight (--select-red) */
     stroke: #fff;
     stroke-width: 2px;
 }
@@ -167,8 +223,8 @@ th {
 /* Selection Box */
 .selection-box {
     position: absolute;
-    border: 2px dashed #007bff;
-    background-color: rgba(0, 123, 255, 0.1);
+    border: 2px dashed var(--select-blue);
+    background-color: rgba(42, 120, 214, 0.08);
     z-index: 150;
     /* Below pips (300) but above table/grid (0) */
     pointer-events: auto;
@@ -188,7 +244,7 @@ th {
     position: absolute;
     width: 10px;
     height: 10px;
-    background: #007bff;
+    background: var(--select-blue);
     border: 1px solid #fff;
     border-radius: 2px;
 }
@@ -221,13 +277,22 @@ th {
 .row-total,
 .col-total,
 #grand-total {
-    font-weight: bold;
-    color: #333;
-    background-color: #f0f8ff;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-2);
+    background-color: var(--wash-neutral);
 }
 
-.total-header {
-    background-color: #d1e7dd;
+/* Row/column totals host steppers too; the extra bottom padding keeps the
+   number clear of the stepper in the short footer cells */
+.row-total,
+.col-total {
+    position: relative;
+    padding-bottom: 26px;
+}
+
+#grand-total {
+    color: var(--ink);
 }
 
 /* Responsive Design for Mobile */
@@ -242,10 +307,12 @@ th {
         /* Prevent vertical expansion from absolutely positioned elements */
     }
 
-    h2 {
+    h2,
+    body > h2 {
         font-size: 1.2em;
         margin-top: 10px;
-        padding-right: 0;
+        padding: 0;
+        /* Buttons flow below the title here, so no side padding needed */
     }
 
     /* Shrink text slightly and ensure wrapping */
@@ -294,6 +361,11 @@ th {
     .cell-stepper {
         opacity: 1;
     }
+
+    .row-total,
+    .col-total {
+        padding-bottom: 32px;
+    }
 }
 
 /* Modal Styling */
@@ -308,26 +380,26 @@ th {
     width: 100%;
     height: 100%;
     overflow: auto;
-    background-color: rgba(0, 0, 0, 0.5);
-    /* Black w/ opacity */
+    background-color: rgba(11, 11, 11, 0.45);
 }
 
 .modal-content {
-    background-color: #fefefe;
+    background-color: var(--surface);
     margin: 15% auto;
     /* 15% from top and centered */
     padding: 20px 30px;
-    border: 1px solid #888;
+    border: 1px solid var(--hairline);
     width: 80%;
     max-width: 500px;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    font-family: Arial, sans-serif;
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(11, 11, 11, 0.18);
     line-height: 1.6;
+    color: var(--ink-2);
 }
 
+
 .close-btn {
-    color: #aaa;
+    color: var(--ink-muted);
     float: right;
     font-size: 28px;
     font-weight: bold;
@@ -336,7 +408,7 @@ th {
 
 .close-btn:hover,
 .close-btn:focus {
-    color: black;
+    color: var(--ink);
     text-decoration: none;
     cursor: pointer;
 }
@@ -352,11 +424,9 @@ th {
     position: absolute;
     bottom: 2px;
     right: 3px;
-    /* Slightly tighter */
-    font-size: 0.65em;
-    /* Smaller */
-    color: #bbb;
-    /* Lighter/Subtler */
+    font-size: 0.7em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-muted);
     pointer-events: none;
     font-weight: normal;
 }
@@ -390,27 +460,29 @@ body.box-active .cell-stepper {
     padding: 0;
     font-size: 12px;
     line-height: 1;
-    background: #fff;
-    border: 1px solid #ccc;
-    border-radius: 3px;
-    color: #333;
+    background: var(--surface);
+    border: 1px solid var(--baseline);
+    border-radius: 4px;
+    color: var(--ink-2);
     cursor: pointer;
 }
 
 .stepper-btn:hover:not(:disabled) {
-    background: #f0f0f0;
-    border-color: #999;
+    background: var(--wash-neutral);
+    border-color: var(--ink-muted);
 }
 
 .stepper-btn:disabled {
-    color: #ccc;
-    border-color: #eee;
+    color: var(--baseline);
+    border-color: var(--hairline);
     cursor: default;
 }
 
 /* Preset Menu */
 #preset-select {
     font-size: 14px;
+    max-width: 150px;
+    text-overflow: ellipsis;
 }
 
 /* Version Tag */
@@ -420,8 +492,8 @@ body.box-active .cell-stepper {
     bottom: 5px;
     right: 10px;
     font-size: 0.7em;
-    color: #ddd;
+    color: var(--baseline);
     pointer-events: none;
     z-index: 500;
-    font-family: monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
