@@ -45,12 +45,7 @@ h2 {
     font-weight: 650;
     letter-spacing: -0.01em;
     color: var(--ink);
-}
-
-/* Page title only (not the modal's h2): keep clear of the absolutely
-   positioned button cluster in the top right */
-body > h2 {
-    padding: 0 240px;
+    margin: 16px 0 12px;
 }
 
 /* The table paints per-cell (not as one slab) so the unused corners
@@ -174,11 +169,18 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
     color: var(--ink-muted);
 }
 
-/* Undo Button Style */
+.footer-credits a {
+    color: var(--accent-pos-2);
+}
+
+/* Toolbar: centered under the title, in normal flow at every width, so
+   it can never collide with the title */
 #undo-container {
-    position: absolute;
-    top: 25px;
-    right: 30px;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 16px;
 }
 
 /* Unified Icon Button Style */
@@ -188,11 +190,10 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
     color: var(--ink-2);
     cursor: pointer;
     font-size: 16px;
-    padding: 6px 10px;
+    height: 38px;
+    padding: 0 11px;
     border-radius: 8px;
     box-shadow: 0 1px 2px rgba(11, 11, 11, 0.06);
-    vertical-align: middle;
-    margin: 0 2px;
     transition: background 0.15s ease, border-color 0.15s ease;
 }
 
@@ -207,6 +208,12 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
     cursor: default;
     background: var(--page);
     box-shadow: none;
+}
+
+.icon-btn:focus-visible,
+.stepper-btn:focus-visible {
+    outline: 2px solid var(--select-blue);
+    outline-offset: 1px;
 }
 
 #hexagon-container {
@@ -339,12 +346,17 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
         /* Prevent vertical expansion from absolutely positioned elements */
     }
 
-    h2,
+    /* Left-align the header within the initial visual viewport: the page
+       is wider than the screen, so centered means half off-screen. (body >
+       scoping keeps the modal's h2 centered.) */
     body > h2 {
         font-size: 1.2em;
         margin-top: 10px;
-        padding: 0;
-        /* Buttons flow below the title here, so no side padding needed */
+        text-align: left;
+    }
+
+    #undo-container {
+        justify-content: flex-start;
     }
 
     /* Shrink text slightly and ensure wrapping */
@@ -356,25 +368,16 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
         /* Modern standard */
     }
 
-    /* Un-anchor buttons from top-right and flow them below title */
-    #undo-container {
-        position: static;
-        text-align: center;
-        margin-bottom: 10px;
-        margin-top: 10px;
-        display: flex;
-        justify-content: center;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-
-    /* Larger touch targets on mobile, but smaller overall */
+    /* Larger touch targets on mobile */
     .icon-btn {
         font-size: 18px;
-        padding: 8px 10px;
-        margin: 0;
-        min-width: 40px;
-        min-height: 40px;
+        height: 42px;
+        min-width: 42px;
+    }
+
+    /* 16px prevents iOS Safari from zooming in when the select opens */
+    #preset-select {
+        font-size: 16px;
     }
 
     /* Bigger stepper touch targets, always fully visible (no hover on touch) */
@@ -425,6 +428,10 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
     color: var(--ink-2);
 }
 
+
+.modal-content h2 {
+    margin-top: 4px;
+}
 
 .close-btn {
     color: var(--ink-muted);
@@ -506,11 +513,10 @@ body.box-active .cell-stepper {
     cursor: default;
 }
 
-/* Preset Menu */
+/* Preset Menu (sizes itself to its longest option; the toolbar has room
+   now that it's in normal flow) */
 #preset-select {
     font-size: 14px;
-    max-width: 150px;
-    text-overflow: ellipsis;
 }
 
 /* Version Tag */
