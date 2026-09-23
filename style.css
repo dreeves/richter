@@ -8,6 +8,7 @@
     --ink-2: #52514e;
     --ink-muted: #898781;
     --hairline: #e1e0d9;
+    --hairline-faint: #eeede7;
     --baseline: #c3c2b7;
 
     /* Diverging accents, pole to midpoint */
@@ -23,9 +24,11 @@
     --wash-neg-2: #fbedeb;
     --wash-neutral: #f6f6f3;
 
-    /* Selection colors (mirrored in app.js) */
-    --select-red: #d03b3b;
+    /* Selection: the dashed box and focus rings are blue; selected pips
+       and their share counts are highlighter yellow */
     --select-blue: #2a78d6;
+    --select-yellow: #ffd21f;
+    --wash-select: #fff2a8;
 }
 
 body {
@@ -111,8 +114,7 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
 }
 
 /* Historical-examples rail: secondary to the pip grid */
-.data-row td:nth-of-type(2),
-.annual-row td:nth-of-type(2) {
+.data-row td:nth-of-type(2) {
     font-size: 0.85em;
     color: var(--ink-2);
 }
@@ -135,26 +137,34 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
     /* Uppercase + letter-spacing carries the emphasis instead */
 }
 
-/* Annual Row Styling */
-.annual-row {
+/* Rows AI has already passed (tr.passed) work like any other but are
+   grayed out: muted ink, the neutral wash instead of the outcome washes,
+   and only faint lines between their cells */
+tr.passed {
     color: var(--ink-2);
-    vertical-align: top;
 }
 
-/* On the tds, not the tr, since cells paint their own background now */
-.annual-row td {
+/* The second selector outranks the per-column washes on the pip cells */
+tr.passed td,
+tr.passed td.prob-cell {
     background-color: var(--wash-neutral);
 }
 
-.annual-row .annual-merged-cell {
-    position: relative;
-    text-align: center;
-    vertical-align: top;
-    padding-top: 10px;
+/* Collapsed borders take the left cell's color, so each cell fades the
+   line on its right, up to the last one before the totals rail */
+tr.passed td.prob-cell:has(+ td.prob-cell) {
+    border-right-color: var(--hairline-faint);
 }
 
 .threshold-label {
-    display: inline-block;
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    z-index: 1;
+    /* Above the neighboring cells it overflows into (they are positioned
+       too), below the pips */
     color: var(--ink-muted);
     font-size: 0.9em;
     pointer-events: none;
@@ -253,17 +263,18 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
 }
 
 .hexagon.selected svg polygon {
-    fill: #d03b3b;
-    /* Selection highlight (--select-red) */
-    stroke: #fff;
-    stroke-width: 2px;
+    fill: #ffd21f;
+    /* Selection highlight (--select-yellow); the black outline keeps the
+       pip crisp on the pale cell washes */
+    stroke: #000;
+    stroke-width: 6px;
 }
 
 /* Selection Box */
 .selection-box {
     position: absolute;
     border: 2px dashed var(--select-blue);
-    background-color: rgba(42, 120, 214, 0.08);
+    background-color: rgba(42, 120, 214, 0.2);
     z-index: 150;
     /* Below pips (300) but above table/grid (0) */
     pointer-events: auto;
@@ -271,11 +282,8 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
     display: none;
     cursor: move;
     box-sizing: border-box;
-}
-
-.selection-box.dragging-new {
-    pointer-events: none;
-    /* Disable during initial drag creation */
+    touch-action: none;
+    /* A finger on the box moves or resizes it; the page must not pan */
 }
 
 /* Resize handles */
@@ -334,16 +342,25 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
     color: var(--ink);
 }
 
+/* Share readouts in the totals and cell counts: the selected share sits
+   on a highlighter mark (same yellow family as selected pips); the
+   off-grid share, shown only when nothing is selected, is muted */
+.selected-share {
+    background-color: var(--wash-select);
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+.outside-share {
+    color: var(--ink-muted);
+}
+
 /* Responsive Design for Mobile */
 @media (max-width: 768px) {
 
     /* Prevent Grid Collapse: Force min-width so text doesn't overlap. */
     body {
         min-width: 800px;
-        overflow-x: auto;
-        /* Allow horizontal scroll */
-        overflow-y: hidden;
-        /* Prevent vertical expansion from absolutely positioned elements */
     }
 
     /* Left-align the header within the initial visual viewport: the page
@@ -446,10 +463,12 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
 }
 
 /* Per-cell counts */
-.prob-cell,
-.annual-merged-cell {
+.prob-cell {
     position: relative;
     /* Anchor for absolute positioning of counts */
+    touch-action: pinch-zoom;
+    /* A finger here drags a selection box instead of panning the page;
+       everywhere else the page scrolls as usual */
 }
 
 .cell-count {
@@ -478,7 +497,6 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
 }
 
 .prob-cell:hover .cell-stepper,
-.annual-merged-cell:hover .cell-stepper,
 .row-total:hover .cell-stepper,
 .col-total:hover .cell-stepper {
     opacity: 1;
@@ -493,6 +511,10 @@ td.prob-cell[data-col="catastrophic"] { background-color: var(--wash-neg-2); }
 
 /* Steppers would steal clicks from the selection box's handles (they are
    above it in z-order), so hide them while a box is active */
+body.box-active .selection-box {
+    display: block;
+}
+
 body.box-active .cell-stepper {
     display: none;
 }

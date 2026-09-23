@@ -108,29 +108,40 @@
         <td class="prob-cell" data-col="catastrophic"></td>
         <td class="row-total" id="total-centennial">0%</td>
       </tr>
-      <tr class="data-row" data-row="decennial">
+      <!-- Rows AI has already passed (class "passed") work like the others
+           but are grayed out and carry a threshold message at their top
+           edge. The message sits in the middle cell and is centered across
+           the row; it overflows its cell but takes no clicks -->
+      <tr class="data-row passed" data-row="decennial">
         <td class="category">
           <font size="+20">7</font><br> Decennial
         </td>
         <td>Social media; mobile phones; air conditioning; credit cards</td>
         <td class="prob-cell" data-col="positive"></td>
         <td class="prob-cell" data-col="good"></td>
-        <td class="prob-cell" data-col="ambiguous"></td>
+        <td class="prob-cell" data-col="ambiguous">
+          <div class="threshold-label">
+            ⬆ AI passed this threshold circa 2026 ⬆
+          </div>
+        </td>
         <td class="prob-cell" data-col="bad"></td>
         <td class="prob-cell" data-col="catastrophic"></td>
         <td class="row-total" id="total-decennial">0%</td>
       </tr>
-      <tr class="annual-row">
+      <tr class="data-row passed" data-row="annual">
         <td class="category">
           <font size="+20">6</font><br>Annual
         </td>
         <td>VCR; microwave oven; the zipper; Post-it notes</td>
-        <!-- Spanning cell for the threshold message -->
-        <td colspan="5" class="annual-merged-cell">
+        <td class="prob-cell" data-col="positive"></td>
+        <td class="prob-cell" data-col="good"></td>
+        <td class="prob-cell" data-col="ambiguous">
           <div class="threshold-label">
-            ⬆ AI has already passed this threshold ⬆
+            ⬆ AI passed this threshold by 2024 ⬆
           </div>
         </td>
+        <td class="prob-cell" data-col="bad"></td>
+        <td class="prob-cell" data-col="catastrophic"></td>
         <td class="row-total" id="total-annual">0%</td>
       </tr>
     </tbody>

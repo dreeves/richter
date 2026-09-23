@@ -27,19 +27,56 @@ test.describe('Cell Steppers', () => {
 
     test('minus button is disabled on an empty cell', async ({ page }) => {
         // The annual row starts empty
-        const minus = page.locator('.annual-merged-cell .stepper-btn[data-delta="-1"]');
+        const minus = page.locator('tr[data-row="annual"] td[data-col="positive"] .stepper-btn[data-delta="-1"]');
         await expect(minus).toBeDisabled();
     });
 
-    test('plus on the annual merged cell adds 1% to the annual row', async ({ page }) => {
+    test('plus on an annual cell adds 1% to that cell and to the annual row', async ({ page }) => {
+        // Replicata: press + in the Annual/Positive cell. Expectata: that
+        // cell shows 1%, the annual row total shows 1%, grand total 100%.
+        // Resultata before the change: the annual row was one merged cell
+        // with a single row-wide stepper and no per-cell count.
         // dispatchEvent instead of click: the annual row sits below the
-        // mobile-emulation fold, and the mobile CSS's overflow-y:hidden
-        // blocks the emulator from scrolling to it (real mobile browsers
-        // ignore body overflow locks for user scrolling)
-        await page.locator('.annual-merged-cell .stepper-btn[data-delta="1"]').dispatchEvent('click');
+        // mobile-emulation fold, which the emulator can't reliably scroll to
+        const cell = page.locator('tr[data-row="annual"] td[data-col="positive"]');
+        await cell.locator('.stepper-btn[data-delta="1"]').dispatchEvent('click');
 
+        await expect(cell.locator('.cell-count')).toContainText('1%');
         await expect(page.locator('#total-annual')).toContainText('1%');
         await expect(page.locator('#grand-total')).toContainText('100%');
+    });
+
+    test('the threshold label survives every re-render of the annual row', async ({ page }) => {
+        const label = page.locator('tr[data-row="annual"] .threshold-label');
+        await expect(label).toHaveText('⬆ AI passed this threshold by 2024 ⬆');
+        await page.locator('tr[data-row="annual"] td[data-col="ambiguous"] .stepper-btn[data-delta="1"]').dispatchEvent('click');
+        await expect(page.locator('#total-annual')).toContainText('1%');
+        await expect(label).toHaveText('⬆ AI passed this threshold by 2024 ⬆');
+    });
+
+    test('annual-row pips round-trip through the URL', async ({ page }) => {
+        const cell = page.locator('tr[data-row="annual"] td[data-col="catastrophic"]');
+        await cell.locator('.stepper-btn[data-delta="1"]').dispatchEvent('click');
+        await expect(cell.locator('.cell-count')).toContainText('1%');
+        const shared = page.url();
+        expect(shared).toContain('?d=');
+
+        await page.goto(shared);
+        await expect(page.locator('tr[data-row="annual"] td[data-col="catastrophic"] .cell-count')).toContainText('1%');
+        await expect(page.locator('#total-annual')).toContainText('1%');
+        await expect(page.locator('#grand-total')).toContainText('100%');
+    });
+
+    test('a malformed URL state fails loudly instead of silently randomizing', async ({ page }) => {
+        // Replicata: open the page with garbage in ?d=. Expectata: a page
+        // error, not a quietly random distribution presented as the shared
+        // one. Resultata before the change: the error was swallowed and a
+        // random layout shown.
+        const errors = [];
+        page.on('pageerror', e => errors.push(e.message));
+        await page.goto(url + '?d=@@@');
+        await page.waitForTimeout(300);
+        expect(errors.length).toBeGreaterThan(0);
     });
 
     test('row-total stepper moves 1% into the row', async ({ page }) => {
@@ -49,6 +86,20 @@ test.describe('Cell Steppers', () => {
 
         await expect(page.locator('#total-epochal')).toContainText('26%');
         await expect(page.locator('#grand-total')).toContainText('100%');
+    });
+
+    test('plus on an empty column total fills its top cell first', async ({ page }) => {
+        // Replicata: empty the Catastrophic column (Skeptic has 1% there,
+        // in the epochal row; remove it), then press + on the column total.
+        // Expectata: the pip lands in the top (Epochal) cell of the column,
+        // the first in reading order. Resultata before the change: a random
+        // spot anywhere in the column.
+        await page.selectOption('#preset-select', 'skeptic');
+        await page.locator('#total-catastrophic .stepper-btn[data-delta="-1"]').dispatchEvent('click');
+        await expect(page.locator('#total-catastrophic')).toContainText('0%');
+        await page.locator('#total-catastrophic .stepper-btn[data-delta="1"]').dispatchEvent('click');
+        await expect(page.locator('tr[data-row="epochal"] td[data-col="catastrophic"] .cell-count')).toContainText('1%');
+        await expect(page.locator('#total-catastrophic')).toContainText('1%');
     });
 
     test('column-total stepper moves 1% out of the column', async ({ page }) => {
@@ -81,7 +132,7 @@ test.describe('Cell Steppers', () => {
     });
 
     test('pack and spread are disabled on an empty cell', async ({ page }) => {
-        const stepper = page.locator('.annual-merged-cell');
+        const stepper = page.locator('tr[data-row="annual"] td[data-col="good"]');
         await expect(stepper.locator('.stepper-btn[data-act="pack"]')).toBeDisabled();
         await expect(stepper.locator('.stepper-btn[data-act="spread"]')).toBeDisabled();
     });
